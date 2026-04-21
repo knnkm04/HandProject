@@ -173,11 +173,9 @@ const video = document.getElementById('webcam');
     }
     function applyAdvancedFilters(c, h, w, h_img) {
         const lms = h.multiHandLandmarks;
-        if (lms.length < 1) return;
+        if (!lms || lms.length < 1) return;
         
         const hand = lms[0];
-        
-        // --- ใช้การคำนวณเดียวกับใน process เพื่อให้ได้จุดที่ตรงเป๊ะ ---
         const videoW = video.videoWidth;
         const videoH = video.videoHeight;
         const targetAspect = 9 / 16;
@@ -191,32 +189,28 @@ const video = document.getElementById('webcam');
             sX = 0; sY = (videoH - dH) / 2;
         }
 
-        // ฟังก์ชันแปลงพิกัด (เช็ค Mirror X ที่นี่)
-        const getPoint = (lm) => {
+        // --- จุดสำคัญ: ไม่ต้องใช้ w - cx แล้ว เพราะ Canvas mirror ให้แล้ว ---
+        const getXY = (lm) => {
             let cx = ((lm.x * videoW) - sX) / dW * w;
             let cy = ((lm.y * videoH) - sY) / dH * h_img;
-            // ถ้าจุดวิ่งคนละฝั่ง ให้สลับบรรทัดนี้: 
-            // หากปัจจุบันเป็น w - cx แล้ววิ่งผิด ให้ใช้แค่ cx
-            // หากปัจจุบันเป็น cx แล้ววิ่งผิด ให้ใช้ w - cx
-            return { x: w - cx, y: cy }; 
+            return { x: cx, y: cy }; 
         };
 
-        const p1 = getPoint(hand[8]); // ปลายนิ้วชี้
-        const p2 = getPoint(hand[3]); // ข้อนิ้วโป้ง
-
+        const p1 = getXY(hand[8]); // นิ้วชี้
+        const p2 = getXY(hand[3]); // นิ้วโป้ง
         const midX = (p1.x + p2.x) / 2;
         const midY = (p1.y + p2.y) / 2;
 
-        // วาดจุดเหลือง (Debug)
+        // วาดจุดและฟิลเตอร์ (ต้องวาดก่อน ctx.restore() ในฟังก์ชัน process)
         c.save();
+        // เนื่องจาก ctx ใน process มีการ scale(-1, 1) ไว้ 
+        // เราต้องวาดจุดกึ่งกลางและฟิลเตอร์ที่นี่เลย
         c.fillStyle = "yellow";
         c.beginPath();
         c.arc(midX, midY, 8, 0, Math.PI * 2);
         c.fill();
-        c.restore();
 
-        // --- ส่วนฟิลเตอร์ ---
-        const areaSize = 120; // ปรับขนาดช่องฟิลเตอร์ตามชอบ
+        const areaSize = 120;
         let fx = midX - (areaSize / 2);
         let fy = midY - (areaSize / 2);
 
@@ -228,6 +222,7 @@ const video = document.getElementById('webcam');
             }
             c.putImageData(imgData, fx, fy);
         } catch(e) {}
+        c.restore(); 
     }
     function drawWinBar(c, w) {
         c.fillStyle = "#1c1c1c";
