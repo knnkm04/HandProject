@@ -75,7 +75,7 @@
         ctx.drawImage(video, sx, sy, drawW, drawH, 0, 0, canvas.width, canvas.height);
 
         // ฟังก์ชันแปลงพิกัด (เทียบเท่าการคูณ target_w และ h ใน Python)
-        const fixX = (x) => (canvas.width - (((x * video.videoWidth) - sx) / drawW * canvas.width));
+        const fixX = (x) => (((x * video.videoWidth) - sx) / drawW * canvas.width)
         const fixY = (y) => ((y * video.videoHeight) - sy) / drawH * canvas.height;
 
         // 2. ดึงสีเฉากหลัง (ROI 0:50, 0:50)
@@ -99,7 +99,11 @@
                 let ny = fixY(kp[2].y);
         
                 // Exponential Smoothing 0.85 (ตามไฟล์ main.py)
-                if (firstFrame) { prev_nx = nx; prev_ny = ny; firstFrame = false; }
+                if (firstFrame || !faceFound) { 
+                    prev_nx = nx; 
+                    prev_ny = ny; 
+                    firstFrame = false; 
+                }
                 let snx = prev_nx * 0.85 + nx * 0.15;
                 let sny = prev_ny * 0.85 + ny * 0.15;
                 prev_nx = snx; prev_ny = sny;
