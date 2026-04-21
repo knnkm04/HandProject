@@ -1,17 +1,16 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Pantone Pro-Smooth JS</title>
+    <title>Pantone Pro-Smooth JS (Final Edition)</title>
     <meta charset="utf-8">
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_detection/face_detection.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
     <style>
-        body { margin: 0; background: #1a1a1a; display: flex; justify-content: center; align-items: center; height: 100vh; overflow: hidden; }
-        .window-frame { width: 360px; height: 640px; background: #000; position: relative; border-radius: 8px; overflow: hidden; box-shadow: 0 20px 50px rgba(0,0,0,0.5); }
-        #webcam { display: none; }
-        #canvas { width: 100%; height: 100%; transform: rotateY(180deg); }
+        body { margin: 0; background: #000; display: flex; justify-content: center; align-items: center; height: 100vh; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        .window-frame { width: 360px; height: 640px; background: #000; position: relative; border-radius: 10px; overflow: hidden; box-shadow: 0 30px 60px rgba(0,0,0,0.8); border: 1px solid #333; }
+        #webcam { visibility: hidden; position: absolute; }
+        #canvas { width: 100%; height: 100%; transform: scaleX(-1); } /* Mirror เฉพาะภาพ ไม่ Mirror การวาด */
     </style>
 </head>
 <body>
@@ -24,140 +23,166 @@
 <script>
     const video = document.getElementById('webcam');
     const canvas = document.getElementById('canvas');
-    const ctx = canvas.getContext('2d');
+    const ctx = canvas.getContext('2d', {willReadFrequently: true});
 
     let lastFacePos = { x: 0, y: 0 };
-    let smoothFactor = 0.85;
-
-    // --- Mediapipe Setup ---
-    const faceDetection = new FaceDetection({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_detection/${file}`});
-    faceDetection.setOptions({ model: 'short', minDetectionConfidence: 0.6 });
-
-    const hands = new Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
-    hands.setOptions({ maxNumHands: 2, modelComplexity: 1, minDetectionConfidence: 0.8, minTrackingConfidence: 0.8 });
-
+    let smoothFactor = 0.85; 
     let resultsFace = null;
     let resultsHand = null;
 
+    const faceDetection = new FaceDetection({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_detection/${file}`});
+    faceDetection.setOptions({ model: 'short', minDetectionConfidence: 0.6 });
     faceDetection.onResults(r => resultsFace = r);
+
+    const hands = new Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
+    hands.setOptions({ maxNumHands: 2, modelComplexity: 1, minDetectionConfidence: 0.8, minTrackingConfidence: 0.8 });
     hands.onResults(r => resultsHand = r);
 
     async function process() {
+        if (video.readyState < 2) { requestAnimationFrame(process); return; }
+        
         canvas.width = 360;
         canvas.height = 640;
         
+        // 1. Draw Camera Frame (9:16 Crop)
+        const videoAspect = video.videoWidth / video.videoHeight;
+        const targetAspect = 9 / 16;
+        let drawW, drawH, sx, sy;
+        
+        if (videoAspect > targetAspect) {
+            drawH = video.videoHeight;
+            drawW = drawH * targetAspect;
+            sx = (video.videoWidth - drawW) / 2;
+            sy = 0;
+        } else {
+            drawW = video.videoWidth;
+            drawH = drawW / targetAspect;
+            sx = 0;
+            sy = (video.videoHeight - drawH) / 2;
+        }
+
         ctx.save();
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        
-        // วาดภาพจากกล้อง (Crop 9:16)
-        ctx.drawImage(video, (video.videoWidth - (video.videoHeight * 9/16))/2, 0, video.videoHeight * 9/16, video.videoHeight, 0, 0, canvas.width, canvas.height);
-        
+        // วาดภาพแบบ Mirror
+        ctx.translate(canvas.width, 0);
+        ctx.scale(-1, 1);
+        ctx.drawImage(video, sx, sy, drawW, drawH, 0, 0, canvas.width, canvas.height);
+        ctx.restore();
+
+        // 2. ดึงสีฉากหลัง (Avg Color)
         const avgColor = getAvgColor(ctx);
         const hexCode = rgbToHex(avgColor);
 
-        // 1. ฟิลเตอร์มือ (2 มือ)
+        // 3. ฟิลเตอร์มือ (Glitch & Negative)
         if (resultsHand && resultsHand.multiHandLandmarks && resultsHand.multiHandLandmarks.length === 2) {
-            applyHandFilters(ctx, resultsHand, canvas.width, canvas.height);
+            applyAdvancedFilters(ctx, resultsHand, canvas.width, canvas.height);
         }
 
-        // 2. การ์ด Pantone บนหน้า
+        // 4. การ์ด Pantone (แปะจมูก)
         if (resultsFace && resultsFace.detections.length > 0) {
             const face = resultsFace.detections[0].locationData;
             const nose = face.relativeKeypoints[2];
             
-            let nx = nose.x * canvas.width;
+            // ปรับพิกัด Mirror สำหรับการวาด Text
+            let nx = (1 - nose.x) * canvas.width; 
             let ny = nose.y * canvas.height;
 
             lastFacePos.x = lastFacePos.x * smoothFactor + nx * (1 - smoothFactor);
             lastFacePos.y = lastFacePos.y * smoothFactor + ny * (1 - smoothFactor);
 
-            drawPantoneCard(ctx, lastFacePos.x, lastFacePos.y, face.relativeBoundingBox.width * canvas.width, avgColor, hexCode);
+            drawPantonePro(ctx, lastFacePos.x, lastFacePos.y, face.relativeBoundingBox.width * canvas.width, avgColor, hexCode);
         }
 
-        // 3. วาด UI Bar (Custom Navigation)
-        drawUIBar(ctx, canvas.width);
+        // 5. Custom UI Bar
+        drawWinBar(ctx, canvas.width);
 
-        ctx.restore();
         requestAnimationFrame(process);
     }
 
-    function getAvgColor(context) {
-        const data = context.getImageData(0, 45, 50, 50).data;
+    function getAvgColor(c) {
+        const d = c.getImageData(10, 50, 30, 30).data;
         let r=0, g=0, b=0;
-        for(let i=0; i<data.length; i+=4) { r+=data[i]; g+=data[i+1]; b+=data[i+2]; }
-        const count = data.length/4;
-        return [Math.floor(r/count), Math.floor(g/count), Math.floor(b/count)];
+        for(let i=0; i<d.length; i+=4) { r+=d[i]; g+=d[i+1]; b+=d[i+2]; }
+        const n = d.length/4;
+        return [Math.floor(r/n), Math.floor(g/n), Math.floor(b/n)];
     }
 
     function rgbToHex(rgb) {
         return "#" + rgb.map(x => x.toString(16).padStart(2, '0')).join('').toUpperCase();
     }
 
-    function drawPantoneCard(ctx, x, y, faceW, color, hex) {
-        const scale = faceW / 150;
-        const w = 150 * scale;
-        const h = 150 * scale;
-        const x1 = x - w/2, y1 = y - h/2 - (45 * scale);
+    function drawPantonePro(c, x, y, faceW, color, hex) {
+        const scale = faceW / 180;
+        const w = 160 * scale;
+        const h = 160 * scale;
+        const x1 = x - w/2, y1 = y - h/2 - (50 * scale);
         
-        ctx.fillStyle = "white";
-        ctx.fillRect(x1 - 5, y1 - 5, w + 10, h + 50 * scale);
-        ctx.fillStyle = `rgb(${color[0]},${color[1]},${color[2]})`;
-        ctx.fillRect(x1, y1, w, h);
+        // Shadow & Card
+        c.shadowBlur = 15; c.shadowColor = "rgba(0,0,0,0.3)";
+        c.fillStyle = "white";
+        c.fillRect(x1 - 6, y1 - 6, w + 12, h + 75 * scale);
+        c.shadowBlur = 0;
+        
+        // Color Area
+        c.fillStyle = `rgb(${color[0]},${color[1]},${color[2]})`;
+        c.fillRect(x1, y1, w, h);
 
-        ctx.fillStyle = "black";
-        ctx.font = `bold ${14 * scale}px Arial`;
-        ctx.scale(-1, 1); // Flip text back
-        ctx.fillText("PANTONE", -(x1 + 10 + w/2), y1 + h + 20 * scale);
-        ctx.font = `${10 * scale}px Arial`;
-        ctx.fillText(hex, -(x1 + 10 + w/2), y1 + h + 35 * scale);
-        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        // Text (Fixed Mirroring)
+        c.fillStyle = "black";
+        c.font = `bold ${18 * scale}px Arial`;
+        c.fillText("PANTONE", x1 + 10 * scale, y1 + h + 28 * scale);
+        c.fillStyle = "#444";
+        c.font = `${14 * scale}px Arial`;
+        c.fillText(hex, x1 + 10 * scale, y1 + h + 48 * scale);
+        c.fillStyle = "#aaa";
+        c.font = `${10 * scale}px Arial`;
+        c.fillText("REAL-TIME COLOR", x1 + 10 * scale, y1 + h + 62 * scale);
     }
 
-    function applyHandFilters(ctx, hands, w, h) {
-        const lms1 = hands.multiHandLandmarks[0];
-        const lms2 = hands.multiHandLandmarks[1];
-        const label1 = hands.multiHandedness[0].label;
-        
-        const x1 = Math.min(lms1[0].x, lms2[0].x) * w;
-        const x2 = Math.max(lms1[0].x, lms2[0].x) * w;
-        const y1 = Math.min(lms1[0].y, lms2[0].y) * h;
-        const y2 = Math.max(lms1[0].y, lms2[0].y) * h;
+    function applyAdvancedFilters(c, h, w, h_img) {
+        const l1 = h.multiHandLandmarks[0][0];
+        const l2 = h.multiHandLandmarks[1][0];
+        const label = h.multiHandedness[0].label;
 
-        if(Math.abs(x2-x1) < 20) return;
+        let x1 = Math.min(1-l1.x, 1-l2.x) * w;
+        let x2 = Math.max(1-l1.x, 1-l2.x) * w;
+        let y1 = Math.min(l1.y, l2.y) * h_img;
+        let y2 = Math.max(l1.y, l2.y) * h_img;
 
-        let imageData = ctx.getImageData(x1, y1, x2-x1, y2-y1);
-        let data = imageData.data;
+        if (x2 - x1 < 10 || y2 - y1 < 10) return;
 
-        const leftHandY = (label1 === 'Left') ? lms1[0].y : lms2[0].y;
-        const rightHandY = (label1 === 'Right') ? lms1[0].y : lms2[0].y;
+        let imgData = c.getImageData(x1, y1, x2-x1, y2-y1);
+        let d = imgData.data;
 
-        if (leftHandY < rightHandY) { // Negative
-            for(let i=0; i<data.length; i+=4) {
-                data[i] = 255 - data[i]; data[i+1] = 255 - data[i+1]; data[i+2] = 255 - data[i+2];
-            }
-        } else { // Glitch (Simple Version)
-            for(let i=0; i<data.length; i+=4) {
-                if(i+8 < data.length) data[i] = data[i+8]; // Shift Red
+        const isLeftHigher = (label === 'Left' ? l1.y : l2.y) < (label === 'Right' ? l1.y : l2.y);
+
+        if (isLeftHigher) { // Negative Filter
+            for(let i=0; i<d.length; i+=4) { d[i]=255-d[i]; d[i+1]=255-d[i+1]; d[i+2]=255-d[i+2]; }
+        } else { // Advanced RGB Glitch
+            const shift = 20;
+            for(let i=0; i<d.length; i+=4) {
+                if(i + shift*4 < d.length) {
+                    d[i] = d[i + shift*4]; // Shift Red Channel
+                    d[i+2] = d[Math.max(0, i - shift*4 + 2)]; // Shift Blue Channel
+                }
             }
         }
-        ctx.putImageData(imageData, x1, y1);
+        c.putImageData(imgData, x1, y1);
     }
 
-    function drawUIBar(ctx, w) {
-        ctx.fillStyle = "#1c1c1c";
-        ctx.fillRect(0, 0, w, 45);
-        ctx.fillStyle = "#ccc";
-        ctx.font = "12px Arial";
-        ctx.scale(-1, 1);
-        ctx.fillText("PANTONE PRO-JS", -150, 28);
-        ctx.setTransform(1, 0, 0, 1, 0, 0);
+    function drawWinBar(c, w) {
+        c.fillStyle = "#1c1c1c";
+        c.fillRect(0, 0, w, 45);
+        c.fillStyle = "#999";
+        c.font = "500 13px Segoe UI";
+        c.fillText("PANTONE PRO-SMOOTH JS", 15, 28);
         
-        // Window Buttons
-        const btns = ["#ff5f56", "#ffbd2e", "#27c93f"];
-        btns.forEach((c, i) => {
-            ctx.fillStyle = c;
-            ctx.beginPath(); ctx.arc(w - 20 - (i*20), 22, 6, 0, Math.PI*2); ctx.fill();
+        const colors = ["#ff5f56", "#ffbd2e", "#27c93f"];
+        colors.reverse().forEach((col, i) => {
+            c.fillStyle = col;
+            c.beginPath(); c.arc(w - 20 - (i*22), 22, 6, 0, Math.PI*2); c.fill();
         });
+        c.strokeStyle = "#333"; c.lineWidth = 1;
+        c.beginPath(); c.moveTo(0, 45); c.lineTo(w, 45); c.stroke();
     }
 
     const camera = new Camera(video, {
@@ -169,7 +194,6 @@
     });
     camera.start();
     video.addEventListener('loadedmetadata', process);
-
 </script>
 </body>
 </html>
