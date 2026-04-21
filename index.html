@@ -78,21 +78,21 @@
         }
 
         // 4. การ์ด Pantone (แปะจมูก)
-        if (resultsFace && resultsFace.detections && resultsFace.detections.length > 0) {
-            const face = resultsFace.detections[0].locationData;
+        const detections = resultsFace?.detections; // ใช้ ?. เพื่อความปลอดภัย
+        if (detections && detections.length > 0) {
+            const face = detections[0].locationData;
+            const nose = face?.relativeKeypoints?.[2]; // ใช้ ?. ก่อนเข้าถึง [2]
             
-            // เพิ่มจุดเช็ค && face.relativeKeypoints เพื่อกัน Error บรรทัด 66 ค่ะ
-            if (face.relativeKeypoints && face.relativeKeypoints[2]) {
-                const nose = face.relativeKeypoints[2];
-                
-                // ปรับพิกัด Mirror สำหรับการวาด Text
+            if (nose) { // ถ้ามีข้อมูลจมูกจริงๆ ค่อยไปต่อ
                 let nx = (1 - nose.x) * canvas.width; 
                 let ny = nose.y * canvas.height;
 
                 lastFacePos.x = lastFacePos.x * smoothFactor + nx * (1 - smoothFactor);
                 lastFacePos.y = lastFacePos.y * smoothFactor + ny * (1 - smoothFactor);
 
-                drawPantonePro(ctx, lastFacePos.x, lastFacePos.y, face.relativeBoundingBox.width * canvas.width, avgColor, hexCode);
+                // ดึงความกว้างใบหน้ามาใช้คำนวณขนาดการ์ด
+                const faceW = face.relativeBoundingBox?.width * canvas.width || 100;
+                drawPantonePro(ctx, lastFacePos.x, lastFacePos.y, faceW, avgColor, hexCode);
             }
         }
 
