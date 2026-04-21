@@ -44,38 +44,76 @@
         canvas.width = 360;
         canvas.height = 640;
         
-        // 1. Draw Camera Frame (9:16 Crop)
+        ctx.save();
+        // 1. วาดภาพแบบ Mirror (ฉากหลัง)
         const videoAspect = video.videoWidth / video.videoHeight;
         const targetAspect = 9 / 16;
         let drawW, drawH, sx, sy;
         
         if (videoAspect > targetAspect) {
-            drawH = video.videoHeight;
-            drawW = drawH * targetAspect;
-            sx = (video.videoWidth - drawW) / 2;
-            sy = 0;
+            drawH = video.videoHeight; drawW = drawH * targetAspect;
+            sx = (video.videoWidth - drawW) / 2; sy = 0;
         } else {
-            drawW = video.videoWidth;
-            drawH = drawW / targetAspect;
-            sx = 0;
-            sy = (video.videoHeight - drawH) / 2;
+            drawW = video.videoWidth; drawH = drawW / targetAspect;
+            sx = 0; sy = (video.videoHeight - drawH) / 2;
         }
 
-        ctx.save();
-        // วาดภาพแบบ Mirror
         ctx.translate(canvas.width, 0);
         ctx.scale(-1, 1);
         ctx.drawImage(video, sx, sy, drawW, drawH, 0, 0, canvas.width, canvas.height);
+        
+        // --- ส่วนการแสดงจุดมาร์ก (Debug) ---
+        
+        // วาดจุดมาร์กมือ (ถ้าเจอ)
+        if (resultsHand && resultsHand.multiHandLandmarks) {
+            for (const landmarks of resultsHand.multiHandLandmarks) {
+                drawConnectors(ctx, landmarks, HAND_CONNECTIONS, {color: '#00FF00', lineWidth: 2});
+                drawLandmarks(ctx, landmarks, {color: '#FF0000', lineWidth: 1});
+            }
+        }
+
+        // วาดกรอบใบหน้าและจุดมาร์กหน้า (ถ้าเจอ)
+        if (resultsFace && resultsFace.detections) {
+            for (const detection of resultsFace.detections) {
+                // วาดกรอบใบหน้า (Bounding Box)
+                drawRectangle(ctx, detection.locationData.relativeBoundingBox, {color: '#0000FF', lineWidth: 2});
+                
+                // วาดจุดสำคัญบนใบหน้า (ตา จมูก ปาก หู)
+                const keypoints = detection.locationData.relativeKeypoints;
+                if (keypoints) {
+                    drawLandmarks(ctx, keypoints, {color: '#FFFFFF', lineWidth: 2});
+                }
+            }
+        }
+
         ctx.restore();
 
-        // 2. ดึงสีฉากหลัง (Avg Color)
+        // 2. ลอจิกการวาดการ์ด Pantone และฟิลเตอร์ (จะวาดทับด้านบน)
         const avgColor = getAvgColor(ctx);
         const hexCode = rgbToHex(avgColor);
 
-        // 3. ฟิลเตอร์มือ (Glitch & Negative)
         if (resultsHand && resultsHand.multiHandLandmarks && resultsHand.multiHandLandmarks.length === 2) {
             applyAdvancedFilters(ctx, resultsHand, canvas.width, canvas.height);
         }
+
+        if (resultsFace && resultsFace.detections && resultsFace.detections.length > 0) {
+            const detection = resultsFace.detections[0];
+            const keypoints = detection?.locationData?.relativeKeypoints;
+            if (keypoints && keypoints[2]) {
+                const nose = keypoints[2];
+                let nx = (1 - nose.x) * canvas.width; 
+                let ny = nose.y * canvas.height;
+                lastFacePos.x = lastFacePos.x * smoothFactor + nx * (1 - smoothFactor);
+                lastFacePos.y = lastFacePos.y * smoothFactor + ny * (1 - smoothFactor);
+                const bBox = detection.locationData.relativeBoundingBox;
+                const faceW = bBox ? bBox.width * canvas.width : 150;
+                drawPantonePro(ctx, lastFacePos.x, lastFacePos.y, faceW, avgColor, hexCode);
+            }
+        }
+
+        drawWinBar(ctx, canvas.width);
+        requestAnimationFrame(process);
+    }
 
         // 4. การ์ด Pantone (แปะจมูก)
     if (resultsFace && resultsFace.detections && resultsFace.detections.length > 0) {
