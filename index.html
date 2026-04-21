@@ -22,7 +22,7 @@
 </div>
 
 <script>
-    const APP_VERSION = "1.0.1"; // แก้เลขตรงนี้ทุกครั้งที่ Commit/Push ขึ้น GitHub
+    const APP_VERSION = "1.1.0"; // แก้เลขตรงนี้ทุกครั้งที่ Commit/Push ขึ้น GitHub
     const video = document.getElementById('webcam');
     const canvas = document.getElementById('canvas');
     const ctx = canvas.getContext('2d', {willReadFrequently: true});
@@ -92,15 +92,15 @@
         // 3. วาดการ์ด Pantone (Face Detection)
         if (resultsFace && resultsFace.detections && resultsFace.detections.length > 0) {
             const det = resultsFace.detections[0];
-            const kp = det.locationData?.relativeKeypoints; // ใช้ ?. กัน Error
+            const kp = det.locationData?.relativeKeypoints;
             const bbox = det.locationData?.relativeBoundingBox;
         
-            if (kp && kp[2] && bbox) { // เช็คความชัวร์ก่อนคำนวณ
+            if (kp && kp[2] && bbox) {
                 let nx = fixX(kp[2].x);
                 let ny = fixY(kp[2].y);
         
-                // Exponential Smoothing 0.85 (ตามไฟล์ main.py)
-                if (firstFrame || !faceFound) { 
+                // แก้ตรงนี้: ใช้ firstFrame เป็นตัวเช็คหลัก
+                if (firstFrame) { 
                     prev_nx = nx; 
                     prev_ny = ny; 
                     firstFrame = false; 
@@ -128,53 +128,37 @@
             }
         }
 
-        // 4. ฟิลเตอร์มือ (Conditional Filters)
+
+        // --- 4. ฟิลเตอร์มือ (แก้ไขใหม่) ---
         if (resultsHand && resultsHand.multiHandLandmarks && resultsHand.multiHandLandmarks.length === 2) {
-            const centers = resultsHand.multiHandLandmarks.map(hand => {
-                const p2 = hand[2], p5 = hand[5];
-                return { x: fixX((p2.x + p5.x) / 2), y: fixY((p2.y + p5.y) / 2 )};
-            });
+            const hands = resultsHand.multiHandLandmarks;
+            
+            // หาจุดกึ่งกลางของมือทั้งสอง (คำนวณแบบ Screen Space)
+            const c0 = { x: fixX((hands[0][2].x + hands[0][5].x) / 2), y: fixY((hands[0][2].y + hands[0][5].y) / 2) };
+            const c1 = { x: fixX((hands[1][2].x + hands[1][5].x) / 2), y: fixY((hands[1][2].y + hands[1][5].y) / 2) };
         
-            // คำนวณพื้นที่ ROI เหมือนใน Python
-            const mx1 = Math.max(0, Math.min(centers[0].x, centers[1].x));
-            const mx2 = Math.min(canvas.width, Math.max(centers[0].x, centers[1].x));
-            const my1 = Math.max(0, Math.min(centers[0].y, centers[1].y));
-            const my2 = Math.min(canvas.height, Math.max(centers[0].y, centers[1].y));
+            const mx1 = Math.floor(Math.max(0, Math.min(c0.x, c1.x)));
+            const mx2 = Math.floor(Math.min(canvas.width, Math.max(c0.x, c1.x)));
+            const my1 = Math.floor(Math.max(0, Math.min(c0.y, c1.y)));
+            const my2 = Math.floor(Math.min(canvas.height, Math.max(c0.y, c1.y)));
         
             if (mx2 - mx1 > 20 && my2 - my1 > 20) {
                 try {
                     const roiData = ctx.getImageData(mx1, my1, mx2 - mx1, my2 - my1);
                     const d = roiData.data;
         
-                    // เช็คว่ามือซ้ายสูงกว่ามือขวาไหม (Negative Filter)
-                    const leftHand = resultsHand.multiHandedness.find(h => h.label === 'Left');
-                    const rightHand = resultsHand.multiHandedness.find(h => h.label === 'Right');
-                    
-                    resultsHand.multiHandedness.forEach((handedness, index) => {
-                        // ในโหมด Mirror: Label 'Left' อาจจะเป็นมือขวาจริงของเรา
-                        // ให้เช็คพิกัด Y จาก multiHandLandmarks โดยใช้ index เดียวกัน
-                        if (handedness.label === 'Left') {
-                            leftHandY = resultsHand.multiHandLandmarks[index][0].y;
-                        } else {
-                            rightHandY = resultsHand.multiHandLandmarks[index][0].y;
-                        }
-                    });
+                    // เทียบจากพิกัด X: ใครอยู่เลขน้อยกว่า (ซ้ายจอ)
+                    const leftHandIndex = c0.x < c1.x ? 0 : 1;
+                    const rightHandIndex = c0.x < c1.x ? 1 : 0;
         
-                    // ถ้ามือซ้ายอยู่สูงกว่า (ค่า Y น้อยกว่า) ให้ทำ Negative
-                    if (leftHandY < rightHandY) { 
-                        // Negative Filter
-                        for(let i=0; i<d.length; i+=4) {
-                            d[i]=255-d[i]; d[i+1]=255-d[i+1]; d[i+2]=255-d[i+2];
-                        }
+                    // เช็คความสูง (Y): ถ้ามือที่อยู่ฝั่งซ้ายจอ อยู่สูงกว่ามือฝั่งขวาจอ
+                    if (hands[leftHandIndex][0].y < hands[rightHandIndex][0].y) {
+                        for(let i=0; i<d.length; i+=4) { d[i]=255-d[i]; d[i+1]=255-d[i+1]; d[i+2]=255-d[i+2]; }
                     } else {
-                        // Glitch Shift
-                        for(let i=0; i<d.length; i+=4) {
-                            d[i] = d[i+40] || d[i]; 
-                            d[i+2] = d[i-40] || d[i+2]; 
-                        }
+                        for(let i=0; i<d.length; i+=4) { d[i] = d[i+40] || d[i]; d[i+2] = d[i-40] || d[i+2]; }
                     }
                     ctx.putImageData(roiData, mx1, my1);
-                } catch(e) { /* ป้องกัน Error นอกขอบจอ */ }
+                } catch(e) {}
             }
         }
 
@@ -201,10 +185,12 @@
             ctx.font = "11px monospace";
             
             // 1. Face & Smooth Check
-            const faceFound = (resultsFace && resultsFace.detections && resultsFace.detections.length > 0);
-            const bbox = resultsFace?.detections?.[0]?.locationData?.relativeBoundingBox;
-            const bboxW = bbox ? bbox.width.toFixed(2) : "0.00";
-            ctx.fillText(`FACE: ${faceFound ? "OK" : "LOST"} (BBoxW: ${bboxW})`, 20, 80);
+            // เปลี่ยนบรรทัดนี้ใน drawStatus
+            const faceDetected = (resultsFace && resultsFace.detections && resultsFace.detections.length > 0);
+            const currentBBox = faceDetected ? resultsFace.detections[0].locationData.relativeBoundingBox : null;
+            const bboxW = currentBBox ? currentBBox.width.toFixed(2) : "0.00";
+            
+            ctx.fillText(`FACE: ${faceDetected ? "OK" : "LOST"} (BBoxW: ${bboxW})`, 20, 80);
             ctx.fillText(`SMOOTH_X: ${prev_nx.toFixed(1)}`, 20, 95);
         
             // 2. Hand & Y-Logic Check
