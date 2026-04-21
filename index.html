@@ -89,19 +89,19 @@
         const hexCode = rgbToHex(avgR, avgG, avgB);
 
         // 3. วาดการ์ด Pantone (Face Detection)
-        // 3. วาดการ์ด Pantone (Face Detection)
         if (resultsFace && resultsFace.detections && resultsFace.detections.length > 0) {
             const det = resultsFace.detections[0];
             
-            // ใช้ Optional Chaining (?.) และเช็คว่ามี kp จริงๆ ก่อน
+            // ใช้ ?. เพื่อเช็คว่าถ้า locationData ไม่มี ให้หยุดอ่านต่อทันที จะไม่พ่น Error
             const kp = det.locationData?.relativeKeypoints;
             const bbox = det.locationData?.relativeBoundingBox;
         
+            // ต้องมีทั้งจุดมาร์ก (kp), จุดจมูก (kp[2]) และกรอบหน้า (bbox) ถึงจะทำงาน
             if (kp && kp[2] && bbox) {
                 let nx = fixX(kp[2].x);
                 let ny = fixY(kp[2].y);
         
-                // Exponential Smoothing
+                // Exponential Smoothing (0.85 เหมือนใน Python)
                 if (firstFrame) { prev_nx = nx; prev_ny = ny; firstFrame = false; }
                 let snx = prev_nx * 0.85 + nx * 0.15;
                 let sny = prev_ny * 0.85 + ny * 0.15;
@@ -117,7 +117,7 @@
                 ctx.fillRect(snx - x_half, sny - y_half - offset_up, x_half*2, y_half*2);
         
                 ctx.save();
-                ctx.scale(-1, 1);
+                ctx.scale(-1, 1); 
                 ctx.fillStyle = "black";
                 ctx.font = `bold ${Math.max(10, 18 * scale)}px sans-serif`;
                 ctx.fillText("PANTONE", -(snx - x_half + 10 * scale), sny + y_half - offset_up + 25 * scale);
