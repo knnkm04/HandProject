@@ -75,7 +75,7 @@
         ctx.drawImage(video, sx, sy, drawW, drawH, 0, 0, canvas.width, canvas.height);
 
         // ฟังก์ชันแปลงพิกัด (เทียบเท่าการคูณ target_w และ h ใน Python)
-        const fixX = (x) => (((x * video.videoWidth) - sx) / drawW * canvas.width)
+        const fixX = (x) => (((x * video.videoWidth) - sx) / drawW * canvas.width);
         const fixY = (y) => ((y * video.videoHeight) - sy) / drawH * canvas.height;
 
         // 2. ดึงสีเฉากหลัง (ROI 0:50, 0:50)
