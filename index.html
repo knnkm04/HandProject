@@ -57,7 +57,7 @@
 </div>
 
 <script>
-    const APP_VERSION = "1.11.1"; // แก้เลขตรงนี้ทุกครั้งที่ Commit/Push ขึ้น GitHub
+    const APP_VERSION = "1.11.2"; // แก้เลขตรงนี้ทุกครั้งที่ Commit/Push ขึ้น GitHub
     const video = document.getElementById('webcam');
     const canvas = document.getElementById('canvas');
     const ctx = canvas.getContext('2d', {willReadFrequently: true});
@@ -291,7 +291,7 @@
     });
 
     let currentSmooth = 0.95;
-    let currentScaleFactor = 100;
+    let currentScaleFactor = 300;
     
     document.getElementById('smoothSlider').oninput = function() {
         currentSmooth = parseFloat(this.value);
