@@ -172,6 +172,38 @@
             ctx.beginPath(); ctx.arc(canvas.width - 60 + (i*20), 22, 6, 0, Math.PI*2); ctx.fill();
         });
 
+        // --- ส่วนแสดงสถานะสำหรับช่วงทดลอง (Debug Display) ---
+        const drawStatus = () => {
+            ctx.save();
+            // วาดกล่องพื้นหลังกึ่งโปร่งใส
+            ctx.fillStyle = "rgba(0, 0, 0, 0.6)";
+            ctx.fillRect(10, 60, 180, 120);
+        
+            ctx.fillStyle = "#00FF00"; // สีเขียวสว่างสำหรับสถานะ
+            ctx.font = "12px monospace";
+            
+            // 1. สถานะใบหน้า
+            const faceFound = (resultsFace && resultsFace.detections && resultsFace.detections.length > 0);
+            ctx.fillText(`FACE: ${faceFound ? "DETECTED" : "LOST"}`, 20, 80);
+            
+            // 2. สถานะมือ
+            const handCount = (resultsHand && resultsHand.multiHandLandmarks) ? resultsHand.multiHandLandmarks.length : 0;
+            ctx.fillText(`HANDS: ${handCount} / 2`, 20, 100);
+            
+            // 3. ข้อมูลสี (Color Engine)
+            ctx.fillText(`COLOR: ${hexCode}`, 20, 120);
+            ctx.fillText(`RGB: ${avgR},${avgG},${avgB}`, 20, 140);
+            
+            // 4. สถานะฟิลเตอร์ (ต้องชู 2 มือ)
+            let filterMode = "OFF";
+            if (handCount === 2) filterMode = (prev_ny > 320) ? "NEGATIVE" : "GLITCH"; // ตัวอย่างเช็คความสูง
+            ctx.fillText(`FILTER: ${filterMode}`, 20, 160);
+            
+            ctx.restore();
+        };
+
+        drawStatus();
+        
         requestAnimationFrame(process);
     }
 
