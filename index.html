@@ -15,14 +15,24 @@
     </style>
 </head>
 <body>
-
+<div style="position: absolute; top: 10px; right: 10px; background: rgba(0,0,0,0.8); color: white; padding: 15px; border-radius: 8px; font-family: monospace; z-index: 100; width: 220px;">
+    <strong>🎛️ TUNING PANEL</strong><br><br>
+    Smoothing: <span id="smoothVal">0.95</span><br>
+    <input type="range" id="smoothSlider" min="0.70" max="0.99" step="0.01" value="0.95" style="width: 100%;"><br><br>
+    
+    Scale Factor: <span id="scaleVal">100</span><br>
+    <input type="range" id="scaleSlider" min="50" max="300" step="10" value="100" style="width: 100%;"><br><br>
+    
+    Confidence: <span id="confVal">0.7</span><br>
+    <input type="range" id="confSlider" min="0.1" max="0.9" step="0.1" value="0.7" style="width: 100%;">
+</div>
 <div class="window-frame">
     <video id="webcam" autoplay playsinline></video>
     <canvas id="canvas"></canvas>
 </div>
 
 <script>
-    const APP_VERSION = "1.8.1"; // แก้เลขตรงนี้ทุกครั้งที่ Commit/Push ขึ้น GitHub
+    const APP_VERSION = "1.9.1"; // แก้เลขตรงนี้ทุกครั้งที่ Commit/Push ขึ้น GitHub
     const video = document.getElementById('webcam');
     const canvas = document.getElementById('canvas');
     const ctx = canvas.getContext('2d', {willReadFrequently: true});
@@ -107,10 +117,12 @@
                 }
 
                 // การคำนวณ Smoothing 0.85
-                prev_nx = (prev_nx * 0.95) + (nx * 0.08);
-                prev_ny = (prev_ny * 0.95) + (ny * 0.08);
-
-                const scale = (bbox.width * canvas.width) / 100.0;
+                // เปลี่ยนบรรทัด Smoothing เป็นแบบนี้
+                prev_nx = (prev_nx * currentSmooth) + (nx * (1 - currentSmooth));
+                prev_ny = (prev_ny * currentSmooth) + (ny * (1 - currentSmooth));
+                
+                // เปลี่ยนบรรทัด Scale เป็นแบบนี้
+                const scale = (bbox.width * canvas.width) / currentScaleFactor;
                 const x_half = 100 * scale, y_half = 100 * scale, offset_up = 70 * scale;
                 const border = 15 * scale;
 
@@ -249,6 +261,26 @@
         },
         width: 1280, height: 720
     });
+
+    let currentSmooth = 0.95;
+    let currentScaleFactor = 100;
+    
+    document.getElementById('smoothSlider').oninput = function() {
+        currentSmooth = parseFloat(this.value);
+        document.getElementById('smoothVal').innerText = this.value;
+    };
+    
+    document.getElementById('scaleSlider').oninput = function() {
+        currentScaleFactor = parseFloat(this.value);
+        document.getElementById('scaleVal').innerText = this.value;
+    };
+    
+    document.getElementById('confSlider').oninput = function() {
+        const val = parseFloat(this.value);
+        document.getElementById('confVal').innerText = val;
+        faceDetection.setOptions({ minDetectionConfidence: val });
+    };
+    
     camera.start();
     video.addEventListener('loadedmetadata', process);
 </script>
