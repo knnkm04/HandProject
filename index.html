@@ -22,7 +22,7 @@
 </div>
 
 <script>
-    const APP_VERSION = "1.1.0"; // แก้เลขตรงนี้ทุกครั้งที่ Commit/Push ขึ้น GitHub
+    const APP_VERSION = "1.2.0"; // แก้เลขตรงนี้ทุกครั้งที่ Commit/Push ขึ้น GitHub
     const video = document.getElementById('webcam');
     const canvas = document.getElementById('canvas');
     const ctx = canvas.getContext('2d', {willReadFrequently: true});
@@ -177,42 +177,42 @@
         
         const drawStatus = () => {
             ctx.save();
-            // ขยายกล่องให้ใหญ่ขึ้นเพื่อรองรับข้อมูลใหม่
             ctx.fillStyle = "rgba(0, 0, 0, 0.7)";
             ctx.fillRect(10, 60, 220, 160);
-        
+
             ctx.fillStyle = "#00FF00";
             ctx.font = "11px monospace";
             
-            // 1. Face & Smooth Check
-            // เปลี่ยนบรรทัดนี้ใน drawStatus
-            const faceDetected = (resultsFace && resultsFace.detections && resultsFace.detections.length > 0);
-            const currentBBox = faceDetected ? resultsFace.detections[0].locationData.relativeBoundingBox : null;
-            const bboxW = currentBBox ? currentBBox.width.toFixed(2) : "0.00";
+            // 1. Face Check - ใช้ ?. ทุกจุดเพื่อป้องกัน Error ล้มละลาย
+            const det = resultsFace?.detections?.[0];
+            const faceFound = !!det; // แปลงเป็น true/false
             
-            ctx.fillText(`FACE: ${faceDetected ? "OK" : "LOST"} (BBoxW: ${bboxW})`, 20, 80);
+            // ถ้ามี det ให้ดึงค่า width ถ้าไม่มีให้เป็น "0.00"
+            const bboxW = det?.locationData?.relativeBoundingBox?.width?.toFixed(2) || "0.00";
+            
+            ctx.fillText(`FACE: ${faceFound ? "OK" : "LOST"} (BBoxW: ${bboxW})`, 20, 80);
             ctx.fillText(`SMOOTH_X: ${prev_nx.toFixed(1)}`, 20, 95);
         
-            // 2. Hand & Y-Logic Check
+            // 2. Hand Check
             const hands = resultsHand?.multiHandLandmarks || [];
             ctx.fillText(`HANDS DETECTED: ${hands.length}`, 20, 115);
             if (hands.length === 2) {
-            // ใช้ ?.landmark?.[0] เพื่อความชัวร์
-                const y0 = hands[0]?.[0]?.y?.toFixed(2) || "0.00";
-                const y1 = hands[1]?.[0]?.y?.toFixed(2) || "0.00";
+                const y0 = hands[0]?.[0]?.y?.toFixed(2) || "0.0";
+                const y1 = hands[1]?.[0]?.y?.toFixed(2) || "0.0";
                 ctx.fillText(`Y-POS: H0:${y0} | H1:${y1}`, 20, 130);
             }
         
-            // 3. Color & Screen
-            ctx.fillText(`COLOR: ${hexCode} (RGB:${avgR},${avgG},${avgB})`, 20, 150);
-            ctx.fillText(`SCREEN: ${canvas.width}x${canvas.height} (9:16)`, 20, 165);
+            // 3. Status อื่นๆ
+            ctx.fillText(`COLOR: ${hexCode}`, 20, 150);
+            ctx.fillText(`SCREEN: ${canvas.width}x${canvas.height}`, 20, 165);
             
-            // 4. Mode
             let mode = "NORMAL";
-            if (hands.length === 2) mode = (hands[0][0].y < hands[1][0].y) ? "NEGATIVE" : "GLITCH";
+            if (hands.length === 2 && hands[0]?.[0] && hands[1]?.[0]) {
+                mode = (hands[0][0].y < hands[1][0].y) ? "NEGATIVE" : "GLITCH";
+            }
             ctx.fillText(`SYSTEM MODE: ${mode}`, 20, 185);
-            // วาดบรรทัดล่างสุดของแถบสถานะ
-            ctx.fillStyle = "#FFFF00"; // ใช้สีเหลืองให้เห็นชัดต่างจากค่าอื่น
+            
+            ctx.fillStyle = "#FFFF00";
             ctx.fillText(`BUILD: v${APP_VERSION}`, 20, 205);
             ctx.restore();
         };
