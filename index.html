@@ -22,7 +22,7 @@
 </div>
 
 <script>
-    const APP_VERSION = "1.8.0"; // แก้เลขตรงนี้ทุกครั้งที่ Commit/Push ขึ้น GitHub
+    const APP_VERSION = "1.8.1"; // แก้เลขตรงนี้ทุกครั้งที่ Commit/Push ขึ้น GitHub
     const video = document.getElementById('webcam');
     const canvas = document.getElementById('canvas');
     const ctx = canvas.getContext('2d', {willReadFrequently: true});
@@ -107,8 +107,8 @@
                 }
 
                 // การคำนวณ Smoothing 0.85
-                prev_nx = (prev_nx * 0.85) + (nx * 0.15);
-                prev_ny = (prev_ny * 0.85) + (ny * 0.15);
+                prev_nx = (prev_nx * 0.95) + (nx * 0.08);
+                prev_ny = (prev_ny * 0.95) + (ny * 0.08);
 
                 const scale = (bbox.width * canvas.width) / 100.0;
                 const x_half = 100 * scale, y_half = 100 * scale, offset_up = 70 * scale;
