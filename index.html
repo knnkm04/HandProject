@@ -52,7 +52,7 @@ const video = document.getElementById('webcam');
         
         ctx.save();
         
-        // 1. วาดภาพจากกล้อง (Crop 9:16)
+        // 1. คำนวณการ Crop (9:16)
         const videoAspect = video.videoWidth / video.videoHeight;
         const targetAspect = 9 / 16;
         let drawW, drawH, sx, sy;
@@ -65,58 +65,64 @@ const video = document.getElementById('webcam');
             sx = 0; sy = (video.videoHeight - drawH) / 2;
         }
 
-        // Mirror ภาพพื้นหลัง
+        // วาดภาพ Mirror
         ctx.translate(canvas.width, 0);
         ctx.scale(-1, 1);
         ctx.drawImage(video, sx, sy, drawW, drawH, 0, 0, canvas.width, canvas.height);
         
-        // --- Debug: วาดจุดมาร์กมือ ---
+        // --- ฟังก์ชันแก้พิกัดให้ตรงเป๊ะ (Crop + Mirror) ---
+        const fixCoords = (landmark) => {
+            let vx = landmark.x * video.videoWidth;
+            let vy = landmark.y * video.videoHeight;
+            // หักลบส่วนที่ Crop และ Scale ให้เท่า Canvas
+            let cx = (vx - sx) / drawW * canvas.width;
+            let cy = (vy - sy) / drawH * canvas.height;
+            // กลับด้าน X เพราะเรา Mirror ภาพไว้
+            return { x: canvas.width - cx, y: cy };
+        };
+
+        // --- Debug: วาดจุดมาร์กมือ (แก้ไขพิกัดให้ตรง) ---
         if (resultsHand && resultsHand.multiHandLandmarks) {
             for (const landmarks of resultsHand.multiHandLandmarks) {
-                drawConnectors(ctx, landmarks, HAND_CONNECTIONS, {color: '#00FF00', lineWidth: 2});
-                drawLandmarks(ctx, landmarks, {color: '#FF0000', lineWidth: 1});
+                const correctedLms = landmarks.map(lm => fixCoords(lm));
+                drawConnectors(ctx, correctedLms, HAND_CONNECTIONS, {color: '#00FF00', lineWidth: 2});
+                drawLandmarks(ctx, correctedLms, {color: '#FF0000', lineWidth: 1});
+
+                // จุดกึ่งกลางนิ้วชี้ (8) และนิ้วโป้ง (3) ที่คำนวณใหม่
+                const p1 = correctedLms[8];
+                const p2 = correctedLms[3];
+                const midX = (p1.x + p2.x) / 2;
+                const midY = (p1.y + p2.y) / 2;
+
+                ctx.fillStyle = "yellow";
+                ctx.beginPath(); ctx.arc(midX, midY, 8, 0, Math.PI * 2); ctx.fill();
             }
         }
 
-        // --- Debug: วาดจุดมาร์กหน้า ---
-// --- Debug: วาดจุดมาร์กหน้า ---
-        if (resultsFace && resultsFace.detections && resultsFace.detections.length > 0) {
+        // --- Debug: วาดจุดมาร์กหน้า (แก้ไขพิกัดให้ตรง) ---
+        if (resultsFace && resultsFace.detections) {
             for (const detection of resultsFace.detections) {
-                // เพิ่ม Safety Check: เช็คว่ามี locationData และ relativeBoundingBox จริงๆ ก่อนวาด
-                const bBox = detection?.locationData?.relativeBoundingBox;
-                if (bBox) {
-                    drawRectangle(ctx, bBox, {color: '#0000FF', lineWidth: 2});
-                }
-                
                 const keypoints = detection?.locationData?.relativeKeypoints;
                 if (keypoints) {
-                    drawLandmarks(ctx, keypoints, {color: '#FFFFFF', lineWidth: 2});
+                    const correctedKp = keypoints.map(kp => fixCoords(kp));
+                    drawLandmarks(ctx, correctedKp, {color: '#FFFFFF', lineWidth: 2});
                 }
             }
         }
         ctx.restore(); 
 
-        // 2. คำนวณสีและการ์ด Pantone
+        // 2. ลอจิกการวาดการ์ด Pantone (แปะจมูก)
         const avgColor = getAvgColor(ctx);
         const hexCode = rgbToHex(avgColor);
 
-        // ฟิลเตอร์มือ
-        if (resultsHand && resultsHand.multiHandLandmarks && resultsHand.multiHandLandmarks.length === 2) {
-            applyAdvancedFilters(ctx, resultsHand, canvas.width, canvas.height);
-        }
-
-        // วาดการ์ด Pantone (แปะจมูก)
         if (resultsFace && resultsFace.detections && resultsFace.detections.length > 0) {
             const detection = resultsFace.detections[0];
             const keypoints = detection?.locationData?.relativeKeypoints;
-            
             if (keypoints && keypoints[2]) {
-                const nose = keypoints[2];
-                let nx = (1 - nose.x) * canvas.width; 
-                let ny = nose.y * canvas.height;
-
-                lastFacePos.x = lastFacePos.x * smoothFactor + nx * (1 - smoothFactor);
-                lastFacePos.y = lastFacePos.y * smoothFactor + ny * (1 - smoothFactor);
+                const nosePos = fixCoords(keypoints[2]); // ใช้ฟังก์ชันแก้พิกัดตัวเดียวกัน
+                
+                lastFacePos.x = lastFacePos.x * smoothFactor + nosePos.x * (1 - smoothFactor);
+                lastFacePos.y = lastFacePos.y * smoothFactor + nosePos.y * (1 - smoothFactor);
 
                 const bBox = detection.locationData.relativeBoundingBox;
                 const faceW = bBox ? bBox.width * canvas.width : 150;
@@ -168,37 +174,45 @@ const video = document.getElementById('webcam');
 
     function applyAdvancedFilters(c, h, w, h_img) {
         const lms = h.multiHandLandmarks;
-        if (lms.length < 2) return;
+        if (lms.length < 1) return; // เช็คว่าเจออย่างน้อย 1 มือ
         
-        const l1 = lms[0][0];
-        const l2 = lms[1][0];
-        const label = h.multiHandedness[0].label;
+        const hand = lms[0]; // ใช้มือแรกที่เจอ
+        
+        // จุดที่ 4 ของนิ้วชี้ (Index 8) และ จุดที่ 3 ของนิ้วโป้ง (Index 3)
+        const indexFinger = hand[8]; 
+        const thumbFinger = hand[3];
 
-        let x1 = Math.min(1-l1.x, 1-l2.x) * w;
-        let x2 = Math.max(1-l1.x, 1-l2.x) * w;
-        let y1 = Math.min(l1.y, l2.y) * h_img;
-        let y2 = Math.max(l1.y, l2.y) * h_img;
+        // หาจุดกึ่งกลาง (Midpoint)
+        let midX = ((indexFinger.x + thumbFinger.x) / 2);
+        let midY = ((indexFinger.y + thumbFinger.y) / 2);
 
-        if (x2 - x1 < 20 || y2 - y1 < 20) return;
+        // แปลงพิกัดเป็น Pixel (และ Mirror X)
+        let screenX = (1 - midX) * w;
+        let screenY = midY * h_img;
+
+        // วาดจุดมาร์กกึ่งกลางสีเหลือง (เพื่อ Debug ให้เห็นว่าจุดอยู่ตรงไหน)
+        ctx.fillStyle = "yellow";
+        ctx.beginPath();
+        ctx.arc(screenX, screenY, 5, 0, Math.PI * 2);
+        ctx.fill();
+
+        // --- ส่วนการทำฟิลเตอร์ (ปรับขนาด Area รอบจุดกึ่งกลาง) ---
+        const areaSize = 80; // ขนาดของกล่องฟิลเตอร์
+        let x = screenX - (areaSize / 2);
+        let y = screenY - (areaSize / 2);
 
         try {
-            let imgData = c.getImageData(x1, y1, x2-x1, y2-y1);
+            let imgData = c.getImageData(x, y, areaSize, areaSize);
             let d = imgData.data;
-            const isLeftHigher = (label === 'Left' ? l1.y : l2.y) < (label === 'Right' ? l1.y : l2.y);
-
-            if (isLeftHigher) {
-                for(let i=0; i<d.length; i+=4) { d[i]=255-d[i]; d[i+1]=255-d[i+1]; d[i+2]=255-d[i+2]; }
-            } else {
-                const shift = 20;
-                for(let i=0; i<d.length; i+=4) {
-                    if(i + shift*4 < d.length) {
-                        d[i] = d[i + shift*4];
-                        d[i+2] = d[Math.max(0, i - shift*4 + 2)];
-                    }
-                }
+            
+            // ใส่ฟิลเตอร์ Negative (ตัวอย่าง)
+            for(let i=0; i<d.length; i+=4) {
+                d[i]=255-d[i]; d[i+1]=255-d[i+1]; d[i+2]=255-d[i+2];
             }
-            c.putImageData(imgData, x1, y1);
-        } catch(e) {}
+            c.putImageData(imgData, x, y);
+        } catch(e) {
+            // ป้องกัน Error กรณีมือหลุดขอบจอ
+        }
     }
 
     function drawWinBar(c, w) {
