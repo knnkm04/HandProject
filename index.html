@@ -22,7 +22,7 @@
 </div>
 
 <script>
-    const APP_VERSION = "1.6.0"; // แก้เลขตรงนี้ทุกครั้งที่ Commit/Push ขึ้น GitHub
+    const APP_VERSION = "1.7.0"; // แก้เลขตรงนี้ทุกครั้งที่ Commit/Push ขึ้น GitHub
     const video = document.getElementById('webcam');
     const canvas = document.getElementById('canvas');
     const ctx = canvas.getContext('2d', {willReadFrequently: true});
@@ -110,13 +110,13 @@
                 prev_nx = (prev_nx * 0.85) + (nx * 0.15);
                 prev_ny = (prev_ny * 0.85) + (ny * 0.15);
 
-                const scale = (bbox.width * canvas.width) / 200.0;
-                const x_half = 75 * scale, y_half = 75 * scale, offset_up = 45 * scale;
-                const border = 10 * scale;
+                const scale = (bbox.width * canvas.width) / 150.0;
+                const x_half = 90 * scale, y_half = 90 * scale, offset_up = 60 * scale;
+                const border = 12 * scale;
 
                 // --- วาด Pantone ---
                 ctx.fillStyle = "white";
-                ctx.fillRect(prev_nx - x_half - border, prev_ny - y_half - offset_up - border, (x_half*2) + (border*2), (y_half*2) + (65 * scale));
+                ctx.fillRect(prev_nx - x_half - border, prev_ny - y_half - offset_up - border, (x_half*2) + (border*2), (y_half*2) + (110 * scale));
                 
                 ctx.fillStyle = `rgb(${avgR},${avgG},${avgB})`;
                 ctx.fillRect(prev_nx - x_half, prev_ny - y_half - offset_up, x_half*2, y_half*2);
@@ -125,8 +125,17 @@
                 ctx.save();
                 ctx.scale(-1, 1);
                 ctx.fillStyle = "black";
-                ctx.font = `bold ${18 * scale}px sans-serif`;
-                ctx.fillText("PANTONE", -(prev_nx - x_half + 10 * scale), prev_ny + y_half - offset_up + 25 * scale);
+                
+// คำว่า PANTONE
+                ctx.font = `bold ${20 * scale}px sans-serif`;
+                ctx.fillText("PANTONE®", -(prev_nx - x_half + 5 * scale), prev_ny + y_half - offset_up + 30 * scale);
+// เพิ่มโค้ดสี HEX
+                ctx.font = `${16 * scale}px monospace`;
+                ctx.fillText(hexCode, -(prev_nx - x_half + 5 * scale), prev_ny + y_half - offset_up + 55 * scale);
+ // เพิ่มข้อความ RGB (เผื่ออยากได้ข้อมูลเพิ่ม)
+                ctx.font = `${10 * scale}px monospace`;
+                ctx.fillText(`RGB: ${avgR},${avgG},${avgB}`, -(prev_nx - x_half + 5 * scale), prev_ny + y_half - offset_up + 75 * scale);
+                
                 ctx.restore();
             } // ปิด if (kp && kp[2] && bbox)
         } // ปิด if (resultsFace...)
