@@ -78,18 +78,22 @@
         }
 
         // 4. การ์ด Pantone (แปะจมูก)
-        if (resultsFace && resultsFace.detections.length > 0) {
+        if (resultsFace && resultsFace.detections && resultsFace.detections.length > 0) {
             const face = resultsFace.detections[0].locationData;
-            const nose = face.relativeKeypoints[2];
             
-            // ปรับพิกัด Mirror สำหรับการวาด Text
-            let nx = (1 - nose.x) * canvas.width; 
-            let ny = nose.y * canvas.height;
+            // เพิ่มจุดเช็ค && face.relativeKeypoints เพื่อกัน Error บรรทัด 66 ค่ะ
+            if (face.relativeKeypoints && face.relativeKeypoints[2]) {
+                const nose = face.relativeKeypoints[2];
+                
+                // ปรับพิกัด Mirror สำหรับการวาด Text
+                let nx = (1 - nose.x) * canvas.width; 
+                let ny = nose.y * canvas.height;
 
-            lastFacePos.x = lastFacePos.x * smoothFactor + nx * (1 - smoothFactor);
-            lastFacePos.y = lastFacePos.y * smoothFactor + ny * (1 - smoothFactor);
+                lastFacePos.x = lastFacePos.x * smoothFactor + nx * (1 - smoothFactor);
+                lastFacePos.y = lastFacePos.y * smoothFactor + ny * (1 - smoothFactor);
 
-            drawPantonePro(ctx, lastFacePos.x, lastFacePos.y, face.relativeBoundingBox.width * canvas.width, avgColor, hexCode);
+                drawPantonePro(ctx, lastFacePos.x, lastFacePos.y, face.relativeBoundingBox.width * canvas.width, avgColor, hexCode);
+            }
         }
 
         // 5. Custom UI Bar
