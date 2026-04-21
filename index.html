@@ -44,7 +44,7 @@
         Smoothing: <span id="smoothVal">0.95</span><br>
         <input type="range" id="smoothSlider" min="0.70" max="0.99" step="0.01" value="0.95" style="width: 100%;"><br><br>
         
-        Scale Factor: <span id="scaleVal">100</span><br>
+        Scale Factor: <span id="scaleVal">300</span><br>
         <input type="range" id="scaleSlider" min="50" max="300" step="10" value="100" style="width: 100%;"><br><br>
         
         Confidence: <span id="confVal">0.7</span><br>
@@ -57,7 +57,7 @@
 </div>
 
 <script>
-    const APP_VERSION = "1.10.1"; // แก้เลขตรงนี้ทุกครั้งที่ Commit/Push ขึ้น GitHub
+    const APP_VERSION = "1.11.1"; // แก้เลขตรงนี้ทุกครั้งที่ Commit/Push ขึ้น GitHub
     const video = document.getElementById('webcam');
     const canvas = document.getElementById('canvas');
     const ctx = canvas.getContext('2d', {willReadFrequently: true});
@@ -231,6 +231,9 @@
         });
         
         const drawStatus = () => {
+            // ถ้าสถานะคือซ่อนอยู่ ให้ข้ามการวาด Status ไปเลย
+            if (isUIHidden) return; 
+        
             ctx.save();
             // ขยายพื้นหลังให้เห็นข้อมูลชัดขึ้น
             ctx.fillStyle = "rgba(0, 0, 0, 0.85)";
@@ -308,6 +311,24 @@
     
     camera.start();
     video.addEventListener('loadedmetadata', process);
+
+    const toggleBtn = document.getElementById('toggleBtn');
+    const controlPanel = document.getElementById('controlPanel');
+    let isUIHidden = false;
+    
+    toggleBtn.onclick = function() {
+        isUIHidden = !isUIHidden;
+        if (isUIHidden) {
+            controlPanel.style.display = 'none';
+            this.innerText = 'SHOW SETTINGS';
+            this.style.opacity = '0.5'; // ทำให้ปุ่มดูจางลงไม่กวนตา
+        } else {
+            controlPanel.style.display = 'block';
+            this.innerText = 'HIDE SETTINGS';
+            this.style.opacity = '1';
+        }
+    };
+    
 </script>
 </body>
 </html>
