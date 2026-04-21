@@ -6,11 +6,12 @@
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_detection/face_detection.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
     <style>
         body { margin: 0; background: #000; display: flex; justify-content: center; align-items: center; height: 100vh; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
         .window-frame { width: 360px; height: 640px; background: #000; position: relative; border-radius: 10px; overflow: hidden; box-shadow: 0 30px 60px rgba(0,0,0,0.8); border: 1px solid #333; }
         #webcam { visibility: hidden; position: absolute; }
-        #canvas { width: 100%; height: 100%; transform: scaleX(-1); } /* Mirror เฉพาะภาพ ไม่ Mirror การวาด */
+        #canvas { width: 100%; height: 100%; }
     </style>
 </head>
 <body>
@@ -30,13 +31,18 @@
     let resultsFace = null;
     let resultsHand = null;
 
-    const faceDetection = new FaceDetection({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_detection/${file}`});
-    faceDetection.setOptions({ model: 'short', minDetectionConfidence: 0.6 });
-    faceDetection.onResults(r => resultsFace = r);
+    // --- Mediapipe Setup ---
+    const faceDetection = new FaceDetection({
+        locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_detection/${file}`
+    });
+    faceDetection.setOptions({ model: 'short', minDetectionConfidence: 0.5 });
+    faceDetection.onResults(r => { resultsFace = r; });
 
-    const hands = new Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
-    hands.setOptions({ maxNumHands: 2, modelComplexity: 1, minDetectionConfidence: 0.8, minTrackingConfidence: 0.8 });
-    hands.onResults(r => resultsHand = r);
+    const hands = new Hands({
+        locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+    });
+    hands.setOptions({ maxNumHands: 2, modelComplexity: 1, minDetectionConfidence: 0.7, minTrackingConfidence: 0.7 });
+    hands.onResults(r => { resultsHand = r; });
 
     async function process() {
         if (video.readyState < 2) { requestAnimationFrame(process); return; }
@@ -45,7 +51,8 @@
         canvas.height = 640;
         
         ctx.save();
-        // 1. วาดภาพแบบ Mirror (ฉากหลัง)
+        
+        // 1. วาดภาพจากกล้อง (Crop 9:16)
         const videoAspect = video.videoWidth / video.videoHeight;
         const targetAspect = 9 / 16;
         let drawW, drawH, sx, sy;
@@ -58,13 +65,12 @@
             sx = 0; sy = (video.videoHeight - drawH) / 2;
         }
 
+        // Mirror ภาพพื้นหลัง
         ctx.translate(canvas.width, 0);
         ctx.scale(-1, 1);
         ctx.drawImage(video, sx, sy, drawW, drawH, 0, 0, canvas.width, canvas.height);
         
-        // --- ส่วนการแสดงจุดมาร์ก (Debug) ---
-        
-        // วาดจุดมาร์กมือ (ถ้าเจอ)
+        // --- Debug: วาดจุดมาร์กมือ ---
         if (resultsHand && resultsHand.multiHandLandmarks) {
             for (const landmarks of resultsHand.multiHandLandmarks) {
                 drawConnectors(ctx, landmarks, HAND_CONNECTIONS, {color: '#00FF00', lineWidth: 2});
@@ -72,39 +78,41 @@
             }
         }
 
-        // วาดกรอบใบหน้าและจุดมาร์กหน้า (ถ้าเจอ)
+        // --- Debug: วาดจุดมาร์กหน้า ---
         if (resultsFace && resultsFace.detections) {
             for (const detection of resultsFace.detections) {
-                // วาดกรอบใบหน้า (Bounding Box)
                 drawRectangle(ctx, detection.locationData.relativeBoundingBox, {color: '#0000FF', lineWidth: 2});
-                
-                // วาดจุดสำคัญบนใบหน้า (ตา จมูก ปาก หู)
                 const keypoints = detection.locationData.relativeKeypoints;
                 if (keypoints) {
                     drawLandmarks(ctx, keypoints, {color: '#FFFFFF', lineWidth: 2});
                 }
             }
         }
+        ctx.restore(); // จบการวาดส่วน Mirror
 
-        ctx.restore();
-
-        // 2. ลอจิกการวาดการ์ด Pantone และฟิลเตอร์ (จะวาดทับด้านบน)
+        // 2. คำนวณสีและการ์ด Pantone
         const avgColor = getAvgColor(ctx);
         const hexCode = rgbToHex(avgColor);
 
+        // ฟิลเตอร์มือ
         if (resultsHand && resultsHand.multiHandLandmarks && resultsHand.multiHandLandmarks.length === 2) {
             applyAdvancedFilters(ctx, resultsHand, canvas.width, canvas.height);
         }
 
+        // วาดการ์ด Pantone (แปะจมูก)
         if (resultsFace && resultsFace.detections && resultsFace.detections.length > 0) {
             const detection = resultsFace.detections[0];
-            const keypoints = detection?.locationData?.relativeKeypoints;
+            const keypoints = detection.locationData.relativeKeypoints;
+            
             if (keypoints && keypoints[2]) {
                 const nose = keypoints[2];
+                // Mirror พิกัดเพื่อให้ตรงกับภาพที่ Flip ไว้
                 let nx = (1 - nose.x) * canvas.width; 
                 let ny = nose.y * canvas.height;
+
                 lastFacePos.x = lastFacePos.x * smoothFactor + nx * (1 - smoothFactor);
                 lastFacePos.y = lastFacePos.y * smoothFactor + ny * (1 - smoothFactor);
+
                 const bBox = detection.locationData.relativeBoundingBox;
                 const faceW = bBox ? bBox.width * canvas.width : 150;
                 drawPantonePro(ctx, lastFacePos.x, lastFacePos.y, faceW, avgColor, hexCode);
@@ -115,46 +123,14 @@
         requestAnimationFrame(process);
     }
 
-        // 4. การ์ด Pantone (แปะจมูก)
-    if (resultsFace && resultsFace.detections && resultsFace.detections.length > 0) {
-            const detection = resultsFace.detections[0];
-            
-            // ตรวจสอบโครงสร้างข้อมูลทีละชั้นด้วย Optional Chaining
-            const locationData = detection?.locationData;
-            const keypoints = locationData?.relativeKeypoints;
-            
-            // ถ้ามีข้อมูล keypoints และมีจุดที่ 2 (จมูก) จริงๆ
-            if (keypoints && keypoints[2]) {
-                const nose = keypoints[2];
-                
-                // คำนวณพิกัด (Mirror)
-                let nx = (1 - nose.x) * canvas.width; 
-                let ny = nose.y * canvas.height;
-
-                // ระบบ Smoothing
-                lastFacePos.x = lastFacePos.x * smoothFactor + nx * (1 - smoothFactor);
-                lastFacePos.y = lastFacePos.y * smoothFactor + ny * (1 - smoothFactor);
-
-                // ตรวจสอบความกว้างใบหน้าเพื่อปรับขนาดการ์ด
-                const bBox = locationData?.relativeBoundingBox;
-                const faceW = bBox ? bBox.width * canvas.width : 150;
-
-                drawPantonePro(ctx, lastFacePos.x, lastFacePos.y, faceW, avgColor, hexCode);
-            }
-        }
-
-        // 5. Custom UI Bar
-        drawWinBar(ctx, canvas.width);
-
-        requestAnimationFrame(process);
-    }
-
     function getAvgColor(c) {
-        const d = c.getImageData(10, 50, 30, 30).data;
-        let r=0, g=0, b=0;
-        for(let i=0; i<d.length; i+=4) { r+=d[i]; g+=d[i+1]; b+=d[i+2]; }
-        const n = d.length/4;
-        return [Math.floor(r/n), Math.floor(g/n), Math.floor(b/n)];
+        try {
+            const d = c.getImageData(10, 60, 30, 30).data;
+            let r=0, g=0, b=0;
+            for(let i=0; i<d.length; i+=4) { r+=d[i]; g+=d[i+1]; b+=d[i+2]; }
+            const n = d.length/4;
+            return [Math.floor(r/n), Math.floor(g/n), Math.floor(b/n)];
+        } catch(e) { return [0,0,0]; }
     }
 
     function rgbToHex(rgb) {
@@ -167,26 +143,22 @@
         const h = 160 * scale;
         const x1 = x - w/2, y1 = y - h/2 - (50 * scale);
         
-        // Shadow & Card
+        c.save();
         c.shadowBlur = 15; c.shadowColor = "rgba(0,0,0,0.3)";
         c.fillStyle = "white";
         c.fillRect(x1 - 6, y1 - 6, w + 12, h + 75 * scale);
         c.shadowBlur = 0;
         
-        // Color Area
         c.fillStyle = `rgb(${color[0]},${color[1]},${color[2]})`;
         c.fillRect(x1, y1, w, h);
 
-        // Text (Fixed Mirroring)
         c.fillStyle = "black";
-        c.font = `bold ${18 * scale}px Arial`;
+        c.font = `bold ${Math.max(12, 18 * scale)}px Arial`;
         c.fillText("PANTONE", x1 + 10 * scale, y1 + h + 28 * scale);
         c.fillStyle = "#444";
-        c.font = `${14 * scale}px Arial`;
+        c.font = `${Math.max(10, 14 * scale)}px Arial`;
         c.fillText(hex, x1 + 10 * scale, y1 + h + 48 * scale);
-        c.fillStyle = "#aaa";
-        c.font = `${10 * scale}px Arial`;
-        c.fillText("REAL-TIME COLOR", x1 + 10 * scale, y1 + h + 62 * scale);
+        c.restore();
     }
 
     function applyAdvancedFilters(c, h, w, h_img) {
@@ -199,32 +171,33 @@
         let y1 = Math.min(l1.y, l2.y) * h_img;
         let y2 = Math.max(l1.y, l2.y) * h_img;
 
-        if (x2 - x1 < 10 || y2 - y1 < 10) return;
+        if (x2 - x1 < 20 || y2 - y1 < 20) return;
 
-        let imgData = c.getImageData(x1, y1, x2-x1, y2-y1);
-        let d = imgData.data;
+        try {
+            let imgData = c.getImageData(x1, y1, x2-x1, y2-y1);
+            let d = imgData.data;
+            const isLeftHigher = (label === 'Left' ? l1.y : l2.y) < (label === 'Right' ? l1.y : l2.y);
 
-        const isLeftHigher = (label === 'Left' ? l1.y : l2.y) < (label === 'Right' ? l1.y : l2.y);
-
-        if (isLeftHigher) { // Negative Filter
-            for(let i=0; i<d.length; i+=4) { d[i]=255-d[i]; d[i+1]=255-d[i+1]; d[i+2]=255-d[i+2]; }
-        } else { // Advanced RGB Glitch
-            const shift = 20;
-            for(let i=0; i<d.length; i+=4) {
-                if(i + shift*4 < d.length) {
-                    d[i] = d[i + shift*4]; // Shift Red Channel
-                    d[i+2] = d[Math.max(0, i - shift*4 + 2)]; // Shift Blue Channel
+            if (isLeftHigher) {
+                for(let i=0; i<d.length; i+=4) { d[i]=255-d[i]; d[i+1]=255-d[i+1]; d[i+2]=255-d[i+2]; }
+            } else {
+                const shift = 20;
+                for(let i=0; i<d.length; i+=4) {
+                    if(i + shift*4 < d.length) {
+                        d[i] = d[i + shift*4];
+                        d[i+2] = d[Math.max(0, i - shift*4 + 2)];
+                    }
                 }
             }
-        }
-        c.putImageData(imgData, x1, y1);
+            c.putImageData(imgData, x1, y1);
+        } catch(e) {}
     }
 
     function drawWinBar(c, w) {
         c.fillStyle = "#1c1c1c";
         c.fillRect(0, 0, w, 45);
         c.fillStyle = "#999";
-        c.font = "500 13px Segoe UI";
+        c.font = "13px Segoe UI";
         c.fillText("PANTONE PRO-SMOOTH JS", 15, 28);
         
         const colors = ["#ff5f56", "#ffbd2e", "#27c93f"];
@@ -232,24 +205,19 @@
             c.fillStyle = col;
             c.beginPath(); c.arc(w - 20 - (i*22), 22, 6, 0, Math.PI*2); c.fill();
         });
-        c.strokeStyle = "#333"; c.lineWidth = 1;
-        c.beginPath(); c.moveTo(0, 45); c.lineTo(w, 45); c.stroke();
     }
 
-    // --- ปรับปรุงส่วนการรันกล้องด้านล่างสุด ---
     const camera = new Camera(video, {
         onFrame: async () => {
-            // บังคับให้รอทั้ง Face และ Hands ประมวลผลเสร็จพร้อมกันในเฟรมเดียว
-            await Promise.all([
-                faceDetection.send({image: video}),
-                hands.send({image: video})
-            ]);
+            // ส่งทีละตัวเพื่อเลี่ยงปัญหา Wasm Conflict
+            if(faceDetection) await faceDetection.send({image: video});
+            if(hands) await hands.send({image: video});
         },
-        width: 640,
-        height: 480
+        width: 640, height: 480
     });
     camera.start();
     video.addEventListener('loadedmetadata', process);
+
 </script>
 </body>
 </html>
