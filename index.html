@@ -171,17 +171,13 @@ const video = document.getElementById('webcam');
         c.fillText(hex, x1 + 10 * scale, y1 + h + 48 * scale);
         c.restore();
     }
-
-   function applyAdvancedFilters(c, h, w, h_img) {
+    function applyAdvancedFilters(c, h, w, h_img) {
         const lms = h.multiHandLandmarks;
         if (lms.length < 1) return;
         
         const hand = lms[0];
         
-        // --- ส่วนที่ทำให้ตรงเป๊ะ: ใช้ Logic เดียวกับ fixCoords ---
-        // เราต้องดึงค่า sx, sy, drawW, drawH มาใช้ (ประกาศไว้ในสโคปที่ฟังก์ชันเข้าถึงได้ หรือคำนวณใหม่)
-        // เพื่อความง่าย เราจะคำนวณตำแหน่งที่ "Corrected" แล้วจากใน process ส่งมา หรือคำนวณซ้ำที่นี่
-        
+        // --- ใช้การคำนวณเดียวกับใน process เพื่อให้ได้จุดที่ตรงเป๊ะ ---
         const videoW = video.videoWidth;
         const videoH = video.videoHeight;
         const targetAspect = 9 / 16;
@@ -195,43 +191,43 @@ const video = document.getElementById('webcam');
             sX = 0; sY = (videoH - dH) / 2;
         }
 
-        const getXY = (lm) => {
+        // ฟังก์ชันแปลงพิกัด (เช็ค Mirror X ที่นี่)
+        const getPoint = (lm) => {
             let cx = ((lm.x * videoW) - sX) / dW * w;
             let cy = ((lm.y * videoH) - sY) / dH * h_img;
-            return { x: w - cx, y: cy }; // Mirror X
+            // ถ้าจุดวิ่งคนละฝั่ง ให้สลับบรรทัดนี้: 
+            // หากปัจจุบันเป็น w - cx แล้ววิ่งผิด ให้ใช้แค่ cx
+            // หากปัจจุบันเป็น cx แล้ววิ่งผิด ให้ใช้ w - cx
+            return { x: w - cx, y: cy }; 
         };
 
-        const p1 = getXY(hand[8]); // ปลายนิ้วชี้
-        const p2 = getXY(hand[3]); // ข้อนิ้วโป้ง
+        const p1 = getPoint(hand[8]); // ปลายนิ้วชี้
+        const p2 = getPoint(hand[3]); // ข้อนิ้วโป้ง
 
-        // จุดกึ่งกลาง
-        let midX = (p1.x + p2.x) / 2;
-        let midY = (p1.y + p2.y) / 2;
+        const midX = (p1.x + p2.x) / 2;
+        const midY = (p1.y + p2.y) / 2;
 
-        // วาดจุดเหลืองคืนมา (Debug)
+        // วาดจุดเหลือง (Debug)
         c.save();
         c.fillStyle = "yellow";
         c.beginPath();
-        c.arc(midX, midY, 6, 0, Math.PI * 2);
+        c.arc(midX, midY, 8, 0, Math.PI * 2);
         c.fill();
         c.restore();
 
-        // --- ส่วนฟิลเตอร์ (Negative) ---
-        const areaSize = 100; 
+        // --- ส่วนฟิลเตอร์ ---
+        const areaSize = 120; // ปรับขนาดช่องฟิลเตอร์ตามชอบ
         let fx = midX - (areaSize / 2);
         let fy = midY - (areaSize / 2);
 
         try {
-            // ดึงข้อมูลพิกเซลเฉพาะจุดกึ่งกลางนิ้ว
             let imgData = c.getImageData(fx, fy, areaSize, areaSize);
             let d = imgData.data;
             for(let i=0; i<d.length; i+=4) {
                 d[i]=255-d[i]; d[i+1]=255-d[i+1]; d[i+2]=255-d[i+2];
             }
             c.putImageData(imgData, fx, fy);
-        } catch(e) {
-            // กัน Error กรณีมืออยู่นอกขอบ Canvas
-        }
+        } catch(e) {}
     }
     function drawWinBar(c, w) {
         c.fillStyle = "#1c1c1c";
