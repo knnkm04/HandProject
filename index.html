@@ -1,15 +1,15 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Pantone Pro-Smooth JS (Final Edition)</title>
+    <title>Pantone Pro-Smooth JS (GitHub Edition)</title>
     <meta charset="utf-8">
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_detection/face_detection.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
     <style>
-        body { margin: 0; background: #000; display: flex; justify-content: center; align-items: center; height: 100vh; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
-        .window-frame { width: 360px; height: 640px; background: #000; position: relative; border-radius: 10px; overflow: hidden; box-shadow: 0 30px 60px rgba(0,0,0,0.8); border: 1px solid #333; }
+        body { margin: 0; background: #000; display: flex; justify-content: center; align-items: center; height: 100vh; overflow: hidden; font-family: sans-serif; }
+        .window-frame { width: 360px; height: 640px; background: #000; position: relative; border-radius: 10px; overflow: hidden; border: 1px solid #333; }
         #webcam { visibility: hidden; position: absolute; }
         #canvas { width: 100%; height: 100%; }
     </style>
@@ -22,37 +22,40 @@
 </div>
 
 <script>
-const video = document.getElementById('webcam');
+    const video = document.getElementById('webcam');
     const canvas = document.getElementById('canvas');
     const ctx = canvas.getContext('2d', {willReadFrequently: true});
 
-    let lastFacePos = { x: 0, y: 0 };
-    let smoothFactor = 0.85; 
     let resultsFace = null;
     let resultsHand = null;
+    let prev_nx = 0, prev_ny = 0;
+    let firstFrame = true;
 
     // --- Mediapipe Setup ---
     const faceDetection = new FaceDetection({
         locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_detection/${file}`
     });
-    faceDetection.setOptions({ model: 'short', minDetectionConfidence: 0.5 });
+    faceDetection.setOptions({ model: 'short', minDetectionConfidence: 0.6 });
     faceDetection.onResults(r => { resultsFace = r; });
 
     const hands = new Hands({
         locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
     });
-    hands.setOptions({ maxNumHands: 2, modelComplexity: 1, minDetectionConfidence: 0.7, minTrackingConfidence: 0.7 });
+    hands.setOptions({ maxNumHands: 2, modelComplexity: 1, minDetectionConfidence: 0.8, minTrackingConfidence: 0.8 });
     hands.onResults(r => { resultsHand = r; });
+
+    // --- Logic functions ---
+    function rgbToHex(r, g, b) {
+        return "#" + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1).toUpperCase();
+    }
 
     async function process() {
         if (video.readyState < 2) { requestAnimationFrame(process); return; }
         
         canvas.width = 360;
         canvas.height = 640;
-        
-        ctx.save();
-        
-        // 1. คำนวณการ Crop (9:16)
+
+        // 1. คำนวณ Crop 9:16 (อิงจาก Python: target_w = h * 9/16)
         const videoAspect = video.videoWidth / video.videoHeight;
         const targetAspect = 9 / 16;
         let drawW, drawH, sx, sy;
@@ -65,190 +68,113 @@ const video = document.getElementById('webcam');
             sx = 0; sy = (video.videoHeight - drawH) / 2;
         }
 
-        // วาดภาพ Mirror
+        ctx.save();
+        // Mirror ภาพ (cv2.flip(frame, 1))
         ctx.translate(canvas.width, 0);
         ctx.scale(-1, 1);
         ctx.drawImage(video, sx, sy, drawW, drawH, 0, 0, canvas.width, canvas.height);
-        
-        // --- ฟังก์ชันแก้พิกัดให้ตรงเป๊ะ (Crop + Mirror) ---
-        const fixCoords = (landmark) => {
-            let vx = landmark.x * video.videoWidth;
-            let vy = landmark.y * video.videoHeight;
-            // หักลบส่วนที่ Crop และ Scale ให้เท่า Canvas
-            let cx = (vx - sx) / drawW * canvas.width;
-            let cy = (vy - sy) / drawH * canvas.height;
-            // กลับด้าน X เพราะเรา Mirror ภาพไว้
-            return { x: canvas.width - cx, y: cy };
-        };
 
+        // ฟังก์ชันแปลงพิกัด (เทียบเท่าการคูณ target_w และ h ใน Python)
+        const fixX = (x) => (canvas.width - (((x * video.videoWidth) - sx) / drawW * canvas.width));
+        const fixY = (y) => ((y * video.videoHeight) - sy) / drawH * canvas.height;
 
-        // --- Debug: วาดจุดมาร์กหน้า (แก้ไขพิกัดให้ตรง) ---
-        if (resultsFace && resultsFace.detections) {
-            for (const detection of resultsFace.detections) {
-                const keypoints = detection?.locationData?.relativeKeypoints;
-                if (keypoints) {
-                    const correctedKp = keypoints.map(kp => fixCoords(kp));
-                    drawLandmarks(ctx, correctedKp, {color: '#FFFFFF', lineWidth: 2});
+        // 2. ดึงสีเฉากหลัง (ROI 0:50, 0:50)
+        const sampleData = ctx.getImageData(10, 55, 30, 30).data; // ขยับลงมาใต้ Bar นิดหน่อย
+        let r_sum=0, g_sum=0, b_sum=0;
+        for(let i=0; i<sampleData.length; i+=4) {
+            r_sum += sampleData[i]; g_sum += sampleData[i+1]; b_sum += sampleData[i+2];
+        }
+        const n = sampleData.length / 4;
+        const avgR = Math.floor(r_sum/n), avgG = Math.floor(g_sum/n), avgB = Math.floor(b_sum/n);
+        const hexCode = rgbToHex(avgR, avgG, avgB);
+
+        // 3. วาดการ์ด Pantone (Face Detection)
+        if (resultsFace && resultsFace.detections.length > 0) {
+            const det = resultsFace.detections[0];
+            const kp = det.locationData.relativeKeypoints;
+            const bbox = det.locationData.relativeBoundingBox;
+
+            let nx = fixX(kp[2].x);
+            let ny = fixY(kp[2].y);
+
+            // Exponential Smoothing (0.85 เหมือนใน Python)
+            if (firstFrame) { prev_nx = nx; prev_ny = ny; firstFrame = false; }
+            let snx = prev_nx * 0.85 + nx * 0.15;
+            let sny = prev_ny * 0.85 + ny * 0.15;
+            prev_nx = snx; prev_ny = sny;
+
+            const scale = (bbox.width * canvas.width) / 200.0;
+            const x_half = 75 * scale, y_half = 75 * scale, offset_up = 45 * scale;
+            const border = 10 * scale, info_h = 65 * scale;
+
+            ctx.fillStyle = "white";
+            ctx.fillRect(snx - x_half - border, sny - y_half - offset_up - border, (x_half*2) + (border*2), (y_half*2) + info_h);
+            ctx.fillStyle = `rgb(${avgR},${avgG},${avgB})`;
+            ctx.fillRect(snx - x_half, sny - y_half - offset_up, x_half*2, y_half*2);
+
+            ctx.save();
+            ctx.scale(-1, 1); // กลับด้าน Text เพราะอยู่ในโหมด Mirror
+            ctx.fillStyle = "black";
+            ctx.font = `bold ${18 * scale}px sans-serif`;
+            ctx.fillText("PANTONE", -(snx - x_half + 10 * scale), sny + y_half - offset_up + 25 * scale);
+            ctx.fillStyle = "#444";
+            ctx.font = `${14 * scale}px sans-serif`;
+            ctx.fillText(hexCode, -(snx - x_half + 10 * scale), sny + y_half - offset_up + 45 * scale);
+            ctx.restore();
+        }
+
+        // 4. ฟิลเตอร์มือ (Conditional Filters)
+        if (resultsHand && resultsHand.multiHandLandmarks && resultsHand.multiHandLandmarks.length === 2) {
+            const centers = resultsHand.multiHandLandmarks.map(hand => {
+                const p2 = hand[2], p5 = hand[5];
+                return { x: fixX((p2.x + p5.x)/2), y: fixY((p2.y + p5.y)/2) };
+            });
+
+            const mx1 = Math.min(centers[0].x, centers[1].x), mx2 = Math.max(centers[0].x, centers[1].x);
+            const my1 = Math.min(centers[0].y, centers[1].y), my2 = Math.max(centers[0].y, centers[1].y);
+
+            if (mx2 - mx1 > 20 && my2 - my1 > 20) {
+                const roiW = mx2 - mx1, roiH = my2 - my1;
+                const roiData = ctx.getImageData(mx1, my1, roiW, roiH);
+                const d = roiData.data;
+
+                const leftY = resultsHand.multiHandLandmarks[resultsHand.multiHandedness.findIndex(h => h.label === 'Left')]?.landmark[0].y || 1;
+                const rightY = resultsHand.multiHandLandmarks[resultsHand.multiHandedness.findIndex(h => h.label === 'Right')]?.landmark[0].y || 1;
+
+                if (leftY < rightY) { // Negative Filter
+                    for(let i=0; i<d.length; i+=4) { d[i]=255-d[i]; d[i+1]=255-d[i+1]; d[i+2]=255-d[i+2]; }
+                } else { // Glitch Shift (Simplified)
+                    for(let i=0; i<d.length; i+=4) { d[i] = d[i+20] || d[i]; d[i+2] = d[i-20] || d[i+2]; }
                 }
+                ctx.putImageData(roiData, mx1, my1);
             }
         }
 
-                // --- Debug: วาดจุดมาร์กมือ (แก้ไขพิกัดให้ตรง) ---
-        if (resultsHand && resultsHand.multiHandLandmarks) {
-            for (const landmarks of resultsHand.multiHandLandmarks) {
-                const correctedLms = landmarks.map(lm => fixCoords(lm));
-                drawConnectors(ctx, correctedLms, HAND_CONNECTIONS, {color: '#00FF00', lineWidth: 2});
-                drawLandmarks(ctx, correctedLms, {color: '#FF0000', lineWidth: 1});
+        ctx.restore();
 
-                // จุดกึ่งกลางนิ้วชี้ (8) และนิ้วโป้ง (3) ที่คำนวณใหม่
-                const p1 = correctedLms[8];
-                const p2 = correctedLms[3];
-                const midX = (p1.x + p2.x) / 2;
-                const midY = (p1.y + p2.y) / 2;
-
-                ctx.fillStyle = "yellow";
-                ctx.beginPath(); ctx.arc(midX, midY, 8, 0, Math.PI * 2); ctx.fill();
-            }
-        }
-        ctx.restore(); 
-
-        // 2. ลอจิกการวาดการ์ด Pantone (แปะจมูก)
-        const avgColor = getAvgColor(ctx);
-        const hexCode = rgbToHex(avgColor);
-
-        if (resultsFace && resultsFace.detections && resultsFace.detections.length > 0) {
-            const detection = resultsFace.detections[0];
-            const keypoints = detection?.locationData?.relativeKeypoints;
-            if (keypoints && keypoints[2]) {
-                const nosePos = fixCoords(keypoints[2]); // ใช้ฟังก์ชันแก้พิกัดตัวเดียวกัน
-                
-                lastFacePos.x = lastFacePos.x * smoothFactor + nosePos.x * (1 - smoothFactor);
-                lastFacePos.y = lastFacePos.y * smoothFactor + nosePos.y * (1 - smoothFactor);
-
-                const bBox = detection.locationData.relativeBoundingBox;
-                const faceW = bBox ? bBox.width * canvas.width : 150;
-                drawPantonePro(ctx, lastFacePos.x, lastFacePos.y, faceW, avgColor, hexCode);
-            }
-        }
-
-        drawWinBar(ctx, canvas.width);
-        requestAnimationFrame(process);
-    }
-
-    function getAvgColor(c) {
-        try {
-            const d = c.getImageData(10, 60, 30, 30).data;
-            let r=0, g=0, b=0;
-            for(let i=0; i<d.length; i+=4) { r+=d[i]; g+=d[i+1]; b+=d[i+2]; }
-            const n = d.length/4;
-            return [Math.floor(r/n), Math.floor(g/n), Math.floor(b/n)];
-        } catch(e) { return [0,0,0]; }
-    }
-
-    function rgbToHex(rgb) {
-        return "#" + rgb.map(x => x.toString(16).padStart(2, '0')).join('').toUpperCase();
-    }
-
-    function drawPantonePro(c, x, y, faceW, color, hex) {
-        const scale = faceW / 180;
-        const w = 160 * scale;
-        const h = 160 * scale;
-        const x1 = x - w/2, y1 = y - h/2 - (50 * scale);
-        
-        c.save();
-        c.shadowBlur = 15; c.shadowColor = "rgba(0,0,0,0.3)";
-        c.fillStyle = "white";
-        c.fillRect(x1 - 6, y1 - 6, w + 12, h + 75 * scale);
-        c.shadowBlur = 0;
-        
-        c.fillStyle = `rgb(${color[0]},${color[1]},${color[2]})`;
-        c.fillRect(x1, y1, w, h);
-
-        c.fillStyle = "black";
-        c.font = `bold ${Math.max(12, 18 * scale)}px Arial`;
-        c.fillText("PANTONE", x1 + 10 * scale, y1 + h + 28 * scale);
-        c.fillStyle = "#444";
-        c.font = `${Math.max(10, 14 * scale)}px Arial`;
-        c.fillText(hex, x1 + 10 * scale, y1 + h + 48 * scale);
-        c.restore();
-    }
-    function applyAdvancedFilters(c, h, w, h_img) {
-        const lms = h.multiHandLandmarks;
-        if (!lms || lms.length < 1) return;
-        
-        const hand = lms[0];
-        const videoW = video.videoWidth;
-        const videoH = video.videoHeight;
-        const targetAspect = 9 / 16;
-        let dW, dH, sX, sY;
-
-        if (videoW / videoH > targetAspect) {
-            dH = videoH; dW = dH * targetAspect;
-            sX = (videoW - dW) / 2; sY = 0;
-        } else {
-            dW = videoW; dH = dW / targetAspect;
-            sX = 0; sY = (videoH - dH) / 2;
-        }
-
-        // --- จุดสำคัญ: ไม่ต้องใช้ w - cx แล้ว เพราะ Canvas mirror ให้แล้ว ---
-        const getXY = (lm) => {
-            let cx = ((lm.x * videoW) - sX) / dW * w;
-            let cy = ((lm.y * videoH) - sY) / dH * h_img;
-            return { x: cx, y: cy }; 
-        };
-
-        const p1 = getXY(hand[8]); // นิ้วชี้
-        const p2 = getXY(hand[3]); // นิ้วโป้ง
-        const midX = (p1.x + p2.x) / 2;
-        const midY = (p1.y + p2.y) / 2;
-
-        // วาดจุดและฟิลเตอร์ (ต้องวาดก่อน ctx.restore() ในฟังก์ชัน process)
-        c.save();
-        // เนื่องจาก ctx ใน process มีการ scale(-1, 1) ไว้ 
-        // เราต้องวาดจุดกึ่งกลางและฟิลเตอร์ที่นี่เลย
-        c.fillStyle = "yellow";
-        c.beginPath();
-        c.arc(midX, midY, 8, 0, Math.PI * 2);
-        c.fill();
-
-        const areaSize = 120;
-        let fx = midX - (areaSize / 2);
-        let fy = midY - (areaSize / 2);
-
-        try {
-            let imgData = c.getImageData(fx, fy, areaSize, areaSize);
-            let d = imgData.data;
-            for(let i=0; i<d.length; i+=4) {
-                d[i]=255-d[i]; d[i+1]=255-d[i+1]; d[i+2]=255-d[i+2];
-            }
-            c.putImageData(imgData, fx, fy);
-        } catch(e) {}
-        c.restore(); 
-    }
-    function drawWinBar(c, w) {
-        c.fillStyle = "#1c1c1c";
-        c.fillRect(0, 0, w, 45);
-        c.fillStyle = "#999";
-        c.font = "13px Segoe UI";
-        c.fillText("PANTONE PRO-SMOOTH JS", 15, 28);
-        
-        const colors = ["#ff5f56", "#ffbd2e", "#27c93f"];
-        colors.reverse().forEach((col, i) => {
-            c.fillStyle = col;
-            c.beginPath(); c.arc(w - 20 - (i*22), 22, 6, 0, Math.PI*2); c.fill();
+        // 5. Custom Navigation Bar (Draw last to be on top)
+        ctx.fillStyle = "rgb(28,28,28)";
+        ctx.fillRect(0, 0, canvas.width, 45);
+        ctx.fillStyle = "#ccc";
+        ctx.font = "14px sans-serif";
+        ctx.fillText("PANTONE PRO-SCALE", 15, 28);
+        [[80,80,242], [80,220,242], [120,242,80]].forEach((col, i) => {
+            ctx.fillStyle = `rgb(${col[2]},${col[1]},${col[0]})`;
+            ctx.beginPath(); ctx.arc(canvas.width - 60 + (i*20), 22, 6, 0, Math.PI*2); ctx.fill();
         });
+
+        requestAnimationFrame(process);
     }
 
     const camera = new Camera(video, {
         onFrame: async () => {
-            if(faceDetection) await faceDetection.send({image: video});
-            if(hands) await hands.send({image: video});
+            await faceDetection.send({image: video});
+            await hands.send({image: video});
         },
-        width: 640, height: 480
+        width: 1280, height: 720
     });
     camera.start();
     video.addEventListener('loadedmetadata', process);
-
 </script>
 </body>
 </html>
