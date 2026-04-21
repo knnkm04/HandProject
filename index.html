@@ -79,30 +79,19 @@ const video = document.getElementById('webcam');
         }
 
         // --- Debug: วาดจุดมาร์กหน้า ---
+// --- Debug: วาดจุดมาร์กหน้า ---
         if (resultsFace && resultsFace.detections && resultsFace.detections.length > 0) {
-            const detection = resultsFace.detections[0];
-            
-            // --- GUARD 1: ตรวจสอบโครงสร้างข้อมูลพื้นฐาน ---
-            const loc = detection?.locationData;
-            const keypoints = loc?.relativeKeypoints;
-            const bBox = loc?.relativeBoundingBox;
-
-            // --- GUARD 2: ต้องมีทั้งจุดจมูก [2] และกรอบใบหน้าถึงจะวาด ---
-            if (keypoints && keypoints[2] && bBox) {
-                const nose = keypoints[2];
+            for (const detection of resultsFace.detections) {
+                // เพิ่ม Safety Check: เช็คว่ามี locationData และ relativeBoundingBox จริงๆ ก่อนวาด
+                const bBox = detection?.locationData?.relativeBoundingBox;
+                if (bBox) {
+                    drawRectangle(ctx, bBox, {color: '#0000FF', lineWidth: 2});
+                }
                 
-                // คำนวณพิกัด Mirror
-                let nx = (1 - nose.x) * canvas.width; 
-                let ny = nose.y * canvas.height;
-
-                // ระบบ Smoothing (ค่านี้ต้องมีประกาศไว้ด้านบนสุดของสคริปต์นะคะ)
-                lastFacePos.x = lastFacePos.x * smoothFactor + nx * (1 - smoothFactor);
-                lastFacePos.y = lastFacePos.y * smoothFactor + ny * (1 - smoothFactor);
-
-                // คำนวณขนาดหน้า
-                const faceW = bBox.width * canvas.width;
-                
-                drawPantonePro(ctx, lastFacePos.x, lastFacePos.y, faceW, avgColor, hexCode);
+                const keypoints = detection?.locationData?.relativeKeypoints;
+                if (keypoints) {
+                    drawLandmarks(ctx, keypoints, {color: '#FFFFFF', lineWidth: 2});
+                }
             }
         }
         ctx.restore(); 
