@@ -81,7 +81,19 @@ const video = document.getElementById('webcam');
             return { x: canvas.width - cx, y: cy };
         };
 
-        // --- Debug: วาดจุดมาร์กมือ (แก้ไขพิกัดให้ตรง) ---
+
+        // --- Debug: วาดจุดมาร์กหน้า (แก้ไขพิกัดให้ตรง) ---
+        if (resultsFace && resultsFace.detections) {
+            for (const detection of resultsFace.detections) {
+                const keypoints = detection?.locationData?.relativeKeypoints;
+                if (keypoints) {
+                    const correctedKp = keypoints.map(kp => fixCoords(kp));
+                    drawLandmarks(ctx, correctedKp, {color: '#FFFFFF', lineWidth: 2});
+                }
+            }
+        }
+
+                // --- Debug: วาดจุดมาร์กมือ (แก้ไขพิกัดให้ตรง) ---
         if (resultsHand && resultsHand.multiHandLandmarks) {
             for (const landmarks of resultsHand.multiHandLandmarks) {
                 const correctedLms = landmarks.map(lm => fixCoords(lm));
@@ -96,17 +108,6 @@ const video = document.getElementById('webcam');
 
                 ctx.fillStyle = "yellow";
                 ctx.beginPath(); ctx.arc(midX, midY, 8, 0, Math.PI * 2); ctx.fill();
-            }
-        }
-
-        // --- Debug: วาดจุดมาร์กหน้า (แก้ไขพิกัดให้ตรง) ---
-        if (resultsFace && resultsFace.detections) {
-            for (const detection of resultsFace.detections) {
-                const keypoints = detection?.locationData?.relativeKeypoints;
-                if (keypoints) {
-                    const correctedKp = keypoints.map(kp => fixCoords(kp));
-                    drawLandmarks(ctx, correctedKp, {color: '#FFFFFF', lineWidth: 2});
-                }
             }
         }
         ctx.restore(); 
