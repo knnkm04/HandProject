@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>HandTone - Pantone Detector</title>
+    <meta charset="utf-8">
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+    <style>
+        body { font-family: sans-serif; text-align: center; background: #f0f2f5; margin: 0; padding: 20px; }
+        .container { position: relative; display: inline-block; }
+        #webcam { transform: rotateY(180deg); width: 100%; max-width: 640px; border-radius: 10px; }
+        #output_canvas { position: absolute; left: 0; top: 0; width: 100%; max-width: 640px; transform: rotateY(180deg); }
+        .info-panel { margin-top: 20px; padding: 15px; background: white; border-radius: 10px; display: inline-block; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        #color-box { width: 50px; height: 50px; border-radius: 5px; display: inline-block; vertical-align: middle; border: 2px solid #ddd; }
+        #pantone-name { font-weight: bold; font-size: 1.2em; margin-left: 10px; }
+    </style>
+</head>
+<body>
+    <h1>HandTone Project 🖐️</h1>
+    <div class="container">
+        <video id="webcam" autoplay playsinline></video>
+        <canvas id="output_canvas"></canvas>
+    </div>
+    <br>
+    <div class="info-panel">
+        <div id="color-box"></div>
+        <span id="pantone-name">กำลังเตรียมระบบ...</span>
+    </div>
+
+    <script>
+        const videoElement = document.getElementById('webcam');
+        const canvasElement = document.getElementById('output_canvas');
+        const canvasCtx = canvasElement.getContext('2d');
+        const colorBox = document.getElementById('color-box');
+        const pantoneText = document.getElementById('pantone-name');
+
+        function onResults(results) {
+            canvasCtx.save();
+            canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+            canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
+            
+            if (results.multiHandLandmarks) {
+                for (const landmarks of results.multiHandLandmarks) {
+                    drawConnectors(canvasCtx, landmarks, HAND_CONNECTIONS, {color: '#00FF00', lineWidth: 5});
+                    drawLandmarks(canvasCtx, landmarks, {color: '#FF0000', lineWidth: 2});
+
+                    // จุดที่ 8 คือปลายนิ้วชี้ (Index Finger Tip)
+                    const tip = landmarks[8];
+                    const x = tip.x * canvasElement.width;
+                    const y = tip.y * canvasElement.height;
+
+                    // ดูดค่าสีจาก Canvas
+                    const pixel = canvasCtx.getImageData(x, y, 1, 1).data;
+                    const rgb = `rgb(${pixel[0]}, ${pixel[1]}, ${pixel[2]})`;
+                    
+                    colorBox.style.backgroundColor = rgb;
+                    pantoneText.innerText = `RGB: ${pixel[0]}, ${pixel[1]}, ${pixel[2]}`;
+                    // (สามารถเพิ่มฟังก์ชันเทียบสี Pantone ในส่วนนี้ได้ค่ะ)
+                }
+            }
+            canvasCtx.restore();
+        }
+
+        const hands = new Hands({locateFile: (file) => {
+            return `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`;
+        }});
+        hands.setOptions({ maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
+        hands.onResults(onResults);
+
+        const camera = new Camera(videoElement, {
+            onFrame: async () => {
+                await hands.send({image: videoElement});
+            },
+            width: 640,
+            height: 480
+        });
+        camera.start();
+        pantoneText.innerText = "ขยับปลายนิ้วชี้เพื่อดูดสี";
+    </script>
+</body>
+</html>
