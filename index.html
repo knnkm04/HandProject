@@ -3,13 +3,33 @@
 <head>
     <title>Pantone Pro-Smooth JS (GitHub Edition)</title>
     <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_detection/face_detection.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
     <style>
-        body { margin: 0; background: #000; display: flex; justify-content: center; align-items: center; height: 100vh; overflow: hidden; font-family: sans-serif; }
-        .window-frame { width: 360px; height: 640px; background: #000; position: relative; border-radius: 10px; overflow: hidden; border: 1px solid #333; }
+        body { 
+            margin: 0; 
+            padding: 0;
+            background: #000; 
+            display: flex; 
+            justify-content: center; 
+            align-items: center; 
+            /* ใช้ min-height เพื่อรองรับแถบ Address bar บนมือถือ */
+            min-height: 100vh; 
+            min-height: -webkit-fill-available; 
+            overflow: hidden; 
+        }
+        .window-frame { 
+            /* เปลี่ยนจาก 360px/640px เป็นเต็มหน้าจอ */
+            width: 100vw; 
+            height: 100vh; 
+            height: -webkit-fill-available;
+            background: #000; 
+            position: relative; 
+            overflow: hidden; 
+        }
         #webcam { visibility: hidden; position: absolute; }
         #canvas { width: 100%; height: 100%; }
     </style>
@@ -32,7 +52,7 @@
 </div>
 
 <script>
-    const APP_VERSION = "1.9.1"; // แก้เลขตรงนี้ทุกครั้งที่ Commit/Push ขึ้น GitHub
+    const APP_VERSION = "1.10.1"; // แก้เลขตรงนี้ทุกครั้งที่ Commit/Push ขึ้น GitHub
     const video = document.getElementById('webcam');
     const canvas = document.getElementById('canvas');
     const ctx = canvas.getContext('2d', {willReadFrequently: true});
@@ -63,12 +83,12 @@
     async function process() {
         if (video.readyState < 2) { requestAnimationFrame(process); return; }
         
-        canvas.width = 360;
-        canvas.height = 640;
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
 
         // 1. คำนวณ Crop 9:16 (อิงจาก Python: target_w = h * 9/16)
         const videoAspect = video.videoWidth / video.videoHeight;
-        const targetAspect = 9 / 16;
+        const targetAspect = canvas.width / canvas.height;
         let drawW, drawH, sx, sy;
         
         if (videoAspect > targetAspect) {
