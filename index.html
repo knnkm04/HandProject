@@ -22,7 +22,7 @@
 </div>
 
 <script>
-    const video = document.getElementById('webcam');
+const video = document.getElementById('webcam');
     const canvas = document.getElementById('canvas');
     const ctx = canvas.getContext('2d', {willReadFrequently: true});
 
@@ -88,7 +88,7 @@
                 }
             }
         }
-        ctx.restore(); // จบการวาดส่วน Mirror
+        ctx.restore(); 
 
         // 2. คำนวณสีและการ์ด Pantone
         const avgColor = getAvgColor(ctx);
@@ -102,11 +102,10 @@
         // วาดการ์ด Pantone (แปะจมูก)
         if (resultsFace && resultsFace.detections && resultsFace.detections.length > 0) {
             const detection = resultsFace.detections[0];
-            const keypoints = detection.locationData.relativeKeypoints;
+            const keypoints = detection?.locationData?.relativeKeypoints;
             
             if (keypoints && keypoints[2]) {
                 const nose = keypoints[2];
-                // Mirror พิกัดเพื่อให้ตรงกับภาพที่ Flip ไว้
                 let nx = (1 - nose.x) * canvas.width; 
                 let ny = nose.y * canvas.height;
 
@@ -162,8 +161,11 @@
     }
 
     function applyAdvancedFilters(c, h, w, h_img) {
-        const l1 = h.multiHandLandmarks[0][0];
-        const l2 = h.multiHandLandmarks[1][0];
+        const lms = h.multiHandLandmarks;
+        if (lms.length < 2) return;
+        
+        const l1 = lms[0][0];
+        const l2 = lms[1][0];
         const label = h.multiHandedness[0].label;
 
         let x1 = Math.min(1-l1.x, 1-l2.x) * w;
@@ -209,7 +211,6 @@
 
     const camera = new Camera(video, {
         onFrame: async () => {
-            // ส่งทีละตัวเพื่อเลี่ยงปัญหา Wasm Conflict
             if(faceDetection) await faceDetection.send({image: video});
             if(hands) await hands.send({image: video});
         },
