@@ -91,17 +91,14 @@
         // 3. วาดการ์ด Pantone (Face Detection)
         if (resultsFace && resultsFace.detections && resultsFace.detections.length > 0) {
             const det = resultsFace.detections[0];
-            
-            // ใช้ ?. เพื่อเช็คว่าถ้า locationData ไม่มี ให้หยุดอ่านต่อทันที จะไม่พ่น Error
-            const kp = det.locationData?.relativeKeypoints;
+            const kp = det.locationData?.relativeKeypoints; // ใช้ ?. กัน Error
             const bbox = det.locationData?.relativeBoundingBox;
         
-            // ต้องมีทั้งจุดมาร์ก (kp), จุดจมูก (kp[2]) และกรอบหน้า (bbox) ถึงจะทำงาน
-            if (kp && kp[2] && bbox) {
+            if (kp && kp[2] && bbox) { // เช็คความชัวร์ก่อนคำนวณ
                 let nx = fixX(kp[2].x);
                 let ny = fixY(kp[2].y);
         
-                // Exponential Smoothing (0.85 เหมือนใน Python)
+                // Exponential Smoothing 0.85 (ตามไฟล์ main.py)
                 if (firstFrame) { prev_nx = nx; prev_ny = ny; firstFrame = false; }
                 let snx = prev_nx * 0.85 + nx * 0.15;
                 let sny = prev_ny * 0.85 + ny * 0.15;
@@ -109,21 +106,19 @@
         
                 const scale = (bbox.width * canvas.width) / 200.0;
                 const x_half = 75 * scale, y_half = 75 * scale, offset_up = 45 * scale;
-                const border = 10 * scale, info_h = 65 * scale;
+                const border = 10 * scale;
         
                 ctx.fillStyle = "white";
-                ctx.fillRect(snx - x_half - border, sny - y_half - offset_up - border, (x_half*2) + (border*2), (y_half*2) + info_h);
+                ctx.fillRect(snx - x_half - border, sny - y_half - offset_up - border, (x_half*2) + (border*2), (y_half*2) + (65 * scale));
                 ctx.fillStyle = `rgb(${avgR},${avgG},${avgB})`;
                 ctx.fillRect(snx - x_half, sny - y_half - offset_up, x_half*2, y_half*2);
         
+                // วาด Text แบบ Mirror Back
                 ctx.save();
-                ctx.scale(-1, 1); 
+                ctx.scale(-1, 1);
                 ctx.fillStyle = "black";
-                ctx.font = `bold ${Math.max(10, 18 * scale)}px sans-serif`;
+                ctx.font = `bold ${18 * scale}px sans-serif`;
                 ctx.fillText("PANTONE", -(snx - x_half + 10 * scale), sny + y_half - offset_up + 25 * scale);
-                ctx.fillStyle = "#444";
-                ctx.font = `${Math.max(8, 14 * scale)}px sans-serif`;
-                ctx.fillText(hexCode, -(snx - x_half + 10 * scale), sny + y_half - offset_up + 45 * scale);
                 ctx.restore();
             }
         }
@@ -131,37 +126,36 @@
         // 4. ฟิลเตอร์มือ (Conditional Filters)
         if (resultsHand && resultsHand.multiHandLandmarks && resultsHand.multiHandLandmarks.length === 2) {
             const centers = resultsHand.multiHandLandmarks.map(hand => {
-                // เช็คว่ามีจุดที่ 2 และ 5 ของมือครบไหม
-                if (hand && hand[2] && hand[5]) {
-                    const p2 = hand[2], p5 = hand[5];
-                    return { x: fixX((p2.x + p5.x)/2), y: fixY((p2.y + p5.y)/2) };
-                }
-                return null;
-            }).filter(c => c !== null); // กรองเอาเฉพาะข้อมูลที่สมบูรณ์
+                const p2 = hand[2], p5 = hand[5];
+                return { x: fixX(p2.x + p5.x) / 2, y: fixY(p2.y + p5.y) / 2 };
+            });
         
-            if (centers.length === 2) {
-                const mx1 = Math.min(centers[0].x, centers[1].x), mx2 = Math.max(centers[0].x, centers[1].x);
-                const my1 = Math.min(centers[0].y, centers[1].y), my2 = Math.max(centers[0].y, centers[1].y);
+            // คำนวณพื้นที่ ROI เหมือนใน Python
+            const mx1 = Math.min(centers[0].x, centers[1].x), mx2 = Math.max(centers[0].x, centers[1].x);
+            const my1 = Math.min(centers[0].y, centers[1].y), my2 = Math.max(centers[0].y, centers[1].y);
         
-                if (mx2 - mx1 > 20 && my2 - my1 > 20) {
-                    try {
-                        const roiW = Math.floor(mx2 - mx1), roiH = Math.floor(my2 - my1);
-                        const roiData = ctx.getImageData(Math.floor(mx1), Math.floor(my1), roiW, roiH);
-                        const d = roiData.data;
+            if (mx2 - mx1 > 20 && my2 - my1 > 20) {
+                try {
+                    const roiData = ctx.getImageData(mx1, my1, mx2 - mx1, my2 - my1);
+                    const d = roiData.data;
         
-                        // เช็ค handedness index ให้ชัวร์
-                        const leftIdx = resultsHand.multiHandedness.findIndex(h => h.label === 'Left' || h.label === 'Right'); // บางที MediaPipe สลับฝั่ง Mirror
-                        const leftY = resultsHand.multiHandLandmarks[0]?.landmark?.[0]?.y || 1;
+                    // เช็คว่ามือซ้ายสูงกว่ามือขวาไหม (Negative Filter)
+                    const leftHand = resultsHand.multiHandedness.find(h => h.label === 'Left');
+                    const rightHand = resultsHand.multiHandedness.find(h => h.label === 'Right');
+                    
+                    // ดึงค่า Y มาเทียบ (0 คือบนสุด 1 คือล่างสุด)
+                    const leftY = leftHand ? resultsHand.multiHandLandmarks[resultsHand.multiHandedness.indexOf(leftHand)][0].y : 1;
+                    const rightY = rightHand ? resultsHand.multiHandLandmarks[resultsHand.multiHandedness.indexOf(rightHand)][0].y : 1;
         
-                        // ลอจิกฟิลเตอร์เดิมของคุณ...
-                        if (leftY < 0.5) { // ปรับเงื่อนไขให้ง่ายขึ้น
-                            for(let i=0; i<d.length; i+=4) { d[i]=255-d[i]; d[i+1]=255-d[i+1]; d[i+2]=255-d[i+2]; }
-                        } else {
-                            for(let i=0; i<d.length; i+=4) { d[i] = d[i+20] || d[i]; d[i+2] = d[i-20] || d[i+2]; }
-                        }
-                        ctx.putImageData(roiData, Math.floor(mx1), Math.floor(my1));
-                    } catch(e) { console.log("Filter area out of bounds"); }
-                }
+                    if (leftY < rightY) { 
+                        // Negative Filter
+                        for(let i=0; i<d.length; i+=4) { d[i]=255-d[i]; d[i+1]=255-d[i+1]; d[i+2]=255-d[i+2]; }
+                    } else {
+                        // Glitch Shift
+                        for(let i=0; i<d.length; i+=4) { d[i] = d[i+40] || d[i]; d[i+2] = d[i-40] || d[i+2]; }
+                    }
+                    ctx.putImageData(roiData, mx1, my1);
+                } catch(e) { /* ป้องกัน Error นอกขอบจอ */ }
             }
         }
 
