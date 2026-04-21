@@ -198,12 +198,17 @@
         c.beginPath(); c.moveTo(0, 45); c.lineTo(w, 45); c.stroke();
     }
 
+    // --- ปรับปรุงส่วนการรันกล้องด้านล่างสุด ---
     const camera = new Camera(video, {
         onFrame: async () => {
-            await faceDetection.send({image: video});
-            await hands.send({image: video});
+            // บังคับให้รอทั้ง Face และ Hands ประมวลผลเสร็จพร้อมกันในเฟรมเดียว
+            await Promise.all([
+                faceDetection.send({image: video}),
+                hands.send({image: video})
+            ]);
         },
-        width: 640, height: 480
+        width: 640,
+        height: 480
     });
     camera.start();
     video.addEventListener('loadedmetadata', process);
